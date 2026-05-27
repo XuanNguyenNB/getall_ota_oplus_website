@@ -44,7 +44,7 @@ Unit tests should cover pure rules:
 - product model to OTA model derivation.
 - seed OTA version builder.
 - OTA track progression and bootstrap ordering.
-- `rui_candidates` parsing and default `[8, 7]`.
+- `rui_candidates` parsing and default `[8, 7, 6]`.
 - release identity and dedup key construction.
 - resolver URL parser, unsafe host rejection and disabled-by-default gate.
 - API error envelope builders.

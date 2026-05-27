@@ -4,14 +4,32 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>OPlus OTA Monitor</title>
-    <link rel="icon" href="data:," />
+    <link class="favicon" rel="icon" href="data:," />
+    <!-- Modern Tech Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
+    <!-- Premium background glowing elements -->
+    <div class="glowing-bg-elements" aria-hidden="true">
+      <div class="glow-circle glow-circle-1"></div>
+      <div class="glow-circle glow-circle-2"></div>
+      <div class="glow-circle glow-circle-3"></div>
+    </div>
+
     <div class="app-shell">
       <header class="topbar">
         <div class="brand-block">
-          <div class="brand-mark" aria-hidden="true">OTA</div>
+          <div class="brand-mark" aria-hidden="true">
+            <!-- Modern Tech SVG Logo -->
+            <svg class="brand-logo-svg" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
           <div>
             <h1>OPlus OTA Monitor</h1>
             <div class="subtitle">Public OTA archive and standard update lookup for OPPO, Realme, and OnePlus</div>
@@ -22,176 +40,224 @@
           <span class="status-pill muted" id="runtimeStatus">Local runtime</span>
         </div>
         <div class="top-actions">
-          <button class="icon-button" type="button" id="refreshButton" title="Refresh releases" aria-label="Refresh releases">Refresh</button>
+          <button class="icon-button" type="button" id="refreshButton" title="Refresh releases" aria-label="Refresh releases">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+            </svg>
+            <span>Refresh</span>
+          </button>
         </div>
       </header>
 
-      <main class="main-grid">
-        <aside class="query-panel">
-          <section class="section-block">
-            <div class="section-head">
-              <h2>Find OTA</h2>
-              <span class="micro-chip">Protected</span>
-            </div>
+      <!-- Unified 2-Column Dashboard Box -->
+      <main class="dashboard-cabinet">
+        
+        <!-- LEFT COLUMN: Control Deck (Sidebar Controls) -->
+        <aside class="control-deck">
+          <div class="section-head">
+            <h2>Control Deck</h2>
+            <span class="micro-chip">Protected</span>
+          </div>
 
-            <div class="segmented" role="group" aria-label="Brand filter">
-              <button class="segment active" type="button" data-brand="">All</button>
-              <button class="segment" type="button" data-brand="oppo">OPPO</button>
-              <button class="segment" type="button" data-brand="realme">Realme</button>
-              <button class="segment" type="button" data-brand="oneplus">OnePlus</button>
+          <div class="segmented" role="group" aria-label="Brand filter">
+            <button class="segment active" type="button" data-brand="">All</button>
+            <button class="segment" type="button" data-brand="oppo">OPPO</button>
+            <button class="segment" type="button" data-brand="realme">Realme</button>
+            <button class="segment" type="button" data-brand="oneplus">OnePlus</button>
+          </div>
+
+          <label class="field">
+            <span>Search devices</span>
+            <div class="search-input-wrapper">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="input-icon">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input id="deviceSearch" type="search" autocomplete="off" placeholder="Name or product model" />
+            </div>
+          </label>
+          <div class="device-list" id="deviceList" aria-live="polite"></div>
+
+          <form id="otaForm" novalidate>
+            <label class="field">
+              <span>Product model</span>
+              <input id="productModel" name="product_model" type="text" autocomplete="off" placeholder="RMX3301" required />
+            </label>
+
+            <div class="two-col">
+              <label class="field">
+                <span>Manifest</span>
+                <select id="manifestCode" name="manifest_code" required>
+                  <option value="" selected disabled>Select manifest</option>
+                  <option value="00">EX / 00</option>
+                  <option value="A4">APC / A4</option>
+                  <option value="A5">OCA / A5</option>
+                  <option value="A6">MEA / A6</option>
+                  <option value="A7">ROW / A7</option>
+                  <option value="1A">TW / 1A</option>
+                  <option value="1B">IN / 1B</option>
+                  <option value="1E">AU / 1E</option>
+                  <option value="2C">SG / 2C</option>
+                  <option value="33">ID / 33</option>
+                  <option value="37">RU / 37</option>
+                  <option value="38">MY / 38</option>
+                  <option value="39">TH / 39</option>
+                  <option value="3B">JP / 3B</option>
+                  <option value="3C">VN / 3C</option>
+                  <option value="3E">PH / 3E</option>
+                  <option value="44">EUEX / 44</option>
+                  <option value="51">TR / 51</option>
+                  <option value="75">EG / 75</option>
+                  <option value="7B">MX / 7B</option>
+                  <option value="82">HK / 82</option>
+                  <option value="83">SA / 83</option>
+                  <option value="8D">EU-NO / 8D</option>
+                  <option value="97">CN / 97</option>
+                  <option value="9A">LATAM / 9A</option>
+                  <option value="9E">BR / 9E</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Track</span>
+                <select id="otaTrack" name="ota_track" required>
+                  <option>A</option>
+                  <option>C</option>
+                  <option>F</option>
+                  <option selected>H</option>
+                </select>
+              </label>
             </div>
 
             <label class="field">
-              <span>Search devices</span>
-              <input id="deviceSearch" type="search" autocomplete="off" placeholder="Name or product model" />
+              <span>RUI candidates</span>
+              <input id="ruiCandidates" name="rui_candidates" type="text" value="8,7,6" inputmode="numeric" />
             </label>
-            <div class="device-list" id="deviceList" aria-live="polite"></div>
 
-            <form id="otaForm" novalidate>
-              <label class="field">
-                <span>Product model</span>
-                <input id="productModel" name="product_model" type="text" autocomplete="off" placeholder="RMX3301" required />
-              </label>
-
-              <div class="two-col">
-                <label class="field">
-                  <span>Manifest</span>
-                  <select id="manifestCode" name="manifest_code" required>
-                    <option value="" selected disabled>Select manifest</option>
-                    <option value="00">EX / 00</option>
-                    <option value="A4">APC / A4</option>
-                    <option value="A5">OCA / A5</option>
-                    <option value="A6">MEA / A6</option>
-                    <option value="A7">ROW / A7</option>
-                    <option value="1A">TW / 1A</option>
-                    <option value="1B">IN / 1B</option>
-                    <option value="1E">AU / 1E</option>
-                    <option value="2C">SG / 2C</option>
-                    <option value="33">ID / 33</option>
-                    <option value="37">RU / 37</option>
-                    <option value="38">MY / 38</option>
-                    <option value="39">TH / 39</option>
-                    <option value="3B">JP / 3B</option>
-                    <option value="3C">VN / 3C</option>
-                    <option value="3E">PH / 3E</option>
-                    <option value="44">EUEX / 44</option>
-                    <option value="51">TR / 51</option>
-                    <option value="75">EG / 75</option>
-                    <option value="7B">MX / 7B</option>
-                    <option value="82">HK / 82</option>
-                    <option value="83">SA / 83</option>
-                    <option value="8D">EU-NO / 8D</option>
-                    <option value="97">CN / 97</option>
-                    <option value="9A">LATAM / 9A</option>
-                    <option value="9E">BR / 9E</option>
-                  </select>
-                </label>
-
-                <label class="field">
-                  <span>Track</span>
-                  <select id="otaTrack" name="ota_track" required>
-                    <option>A</option>
-                    <option>C</option>
-                    <option>F</option>
-                    <option selected>H</option>
-                  </select>
-                </label>
-              </div>
-
-              <label class="field">
-                <span>RUI candidates</span>
-                <input id="ruiCandidates" name="rui_candidates" type="text" value="8,7" inputmode="numeric" />
-              </label>
-
-              <button class="primary-button" type="submit" id="findButton">Find OTA</button>
-              <div class="challenge-panel" id="otaChallengePanel" hidden>
-                <div id="otaChallenge"></div>
-              </div>
-            </form>
-          </section>
+            <button class="primary-button" type="submit" id="findButton">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
+                <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+              </svg>
+              <span>Find OTA</span>
+            </button>
+            <div class="challenge-panel" id="otaChallengePanel" hidden>
+              <div id="otaChallenge"></div>
+            </div>
+          </form>
         </aside>
 
-        <section class="content-panel">
-          <div class="toolbar">
-            <div>
-              <h2 id="releaseTitle">Latest Releases</h2>
-              <div class="subtitle" id="releaseSummary">Loading releases</div>
+        <!-- RIGHT COLUMN: Display Deck (Information and Output Display Panels) -->
+        <section class="display-deck">
+          
+          <!-- TOP: Device OTA Archive Compartment -->
+          <div class="display-panel releases-panel">
+            <div class="toolbar">
+              <div>
+                <h2 id="releaseTitle">Device OTA Archive</h2>
+                <div class="subtitle" id="releaseSummary">Select a device to view updates</div>
+              </div>
+            </div>
+
+            <div class="release-filters" aria-label="Release filters">
+              <label class="field compact">
+                <span>Region</span>
+                <select id="releaseRegion">
+                  <option value="">All</option>
+                </select>
+              </label>
+              <label class="field compact">
+                <span>Type</span>
+                <select id="releaseType">
+                  <option value="">All</option>
+                  <option value="official">Official</option>
+                  <option value="beta">Beta</option>
+                </select>
+              </label>
+              <label class="field compact wide">
+                <span>Version</span>
+                <div class="search-input-wrapper">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="input-icon">
+                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                  </svg>
+                  <input id="releaseSearch" type="search" autocomplete="off" placeholder="Filter version" />
+                </div>
+              </label>
+            </div>
+
+            <div class="alert" id="releaseError" hidden></div>
+            <div class="release-table-wrap">
+              <table class="release-table">
+                <thead>
+                  <tr>
+                    <th>Release</th>
+                    <th>Region</th>
+                    <th>Type</th>
+                    <th>Published</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="releaseRows"></tbody>
+              </table>
             </div>
           </div>
 
-          <div class="release-filters" aria-label="Release filters">
-            <label class="field compact">
-              <span>Region</span>
-              <select id="releaseRegion">
-                <option value="">All</option>
-              </select>
-            </label>
-            <label class="field compact">
-              <span>Type</span>
-              <select id="releaseType">
-                <option value="">All</option>
-                <option value="official">Official</option>
-                <option value="beta">Beta</option>
-              </select>
-            </label>
-            <label class="field compact wide">
-              <span>Version</span>
-              <input id="releaseSearch" type="search" autocomplete="off" placeholder="Filter version" />
-            </label>
-          </div>
+          <!-- BOTTOM: Query Results & Link Resolver Deck -->
+          <div class="display-panel results-deck">
+            
+            <!-- OTA Result details -->
+            <div class="results-card ota-result-card">
+              <div class="section-head">
+                <h2>OTA Result</h2>
+                <span class="micro-chip" id="resultState">idle</span>
+              </div>
+              <div class="alert" id="otaError" hidden></div>
+              <dl class="details-list" id="resultDetails">
+                <dt>Status</dt>
+                <dd>Select a device on the left control deck and submit standard query.</dd>
+              </dl>
+              <div class="button-row">
+                <button class="primary-button small" type="button" id="copyResultButton" disabled>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                  </svg>
+                  <span>Copy URL</span>
+                </button>
+                <button class="secondary-button small" type="button" id="openResultButton" disabled>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/>
+                  </svg>
+                  <span>Open</span>
+                </button>
+              </div>
+            </div>
 
-          <div class="alert" id="releaseError" hidden></div>
-          <div class="release-table-wrap">
-            <table class="release-table">
-              <thead>
-                <tr>
-                  <th>Release</th>
-                  <th>Region</th>
-                  <th>Type</th>
-                  <th>Published</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody id="releaseRows"></tbody>
-            </table>
+            <!-- Link Resolver details -->
+            <div class="results-card resolver-card" id="resolverPanel" hidden>
+              <div class="section-head">
+                <h2>Resolve Link</h2>
+                <span class="micro-chip">Web</span>
+              </div>
+              <form id="resolverForm">
+                <label class="field">
+                  <span>OTA URL</span>
+                  <textarea id="resolverUrl" rows="2" placeholder="https://..." required></textarea>
+                </label>
+                <button class="primary-button" type="submit" id="resolveButton">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
+                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                  </svg>
+                  <span>Resolve</span>
+                </button>
+                <div class="challenge-panel" id="resolverChallengePanel" hidden>
+                  <div id="resolverChallenge"></div>
+                </div>
+              </form>
+              <div class="alert" id="resolverError" hidden></div>
+              <dl class="details-list" id="resolverDetails"></dl>
+            </div>
+            
           </div>
         </section>
 
-        <aside class="result-panel">
-          <section class="section-block">
-            <div class="section-head">
-              <h2>OTA Result</h2>
-              <span class="micro-chip" id="resultState">idle</span>
-            </div>
-            <div class="alert" id="otaError" hidden></div>
-            <dl class="details-list" id="resultDetails">
-              <dt>Status</dt>
-              <dd>Run a manual query to inspect release metadata.</dd>
-            </dl>
-            <div class="button-row">
-              <button class="primary-button small" type="button" id="copyResultButton" disabled>Copy URL</button>
-              <button class="secondary-button small" type="button" id="openResultButton" disabled>Open</button>
-            </div>
-          </section>
-          <section class="section-block resolver-panel" id="resolverPanel" hidden>
-            <div class="section-head">
-              <h2>Resolve Link</h2>
-              <span class="micro-chip">Web</span>
-            </div>
-            <form id="resolverForm">
-              <label class="field">
-                <span>OTA URL</span>
-                <textarea id="resolverUrl" rows="4" placeholder="https://..." required></textarea>
-              </label>
-              <button class="primary-button" type="submit" id="resolveButton">Resolve</button>
-              <div class="challenge-panel" id="resolverChallengePanel" hidden>
-                <div id="resolverChallenge"></div>
-              </div>
-            </form>
-            <div class="alert" id="resolverError" hidden></div>
-            <dl class="details-list" id="resolverDetails"></dl>
-          </section>
-        </aside>
       </main>
 
       <div class="toast" id="toast" role="status" aria-live="polite"></div>

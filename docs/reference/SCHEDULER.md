@@ -89,7 +89,7 @@ OS/RUI candidates are configurable.
 Default:
 
 ```text
-RUI_CANDIDATES=8,7
+RUI_CANDIDATES=8,7,6
 ```
 
 The worker tries candidates from left to right.

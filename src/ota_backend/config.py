@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     scan_max_concurrency: int = Field(default=3, ge=1, le=20)
     scan_request_interval_seconds: float = Field(default=1.0, ge=0, le=60)
     realme_ota_timeout_seconds: float = Field(default=30, gt=0, le=120)
-    rui_candidates: str = "8,7"
+    rui_candidates: str = "8,7,6"
     enable_raw_response: bool = False
 
     public_site_enabled: bool = False

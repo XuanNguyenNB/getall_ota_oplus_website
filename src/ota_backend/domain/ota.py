@@ -6,7 +6,7 @@ from ota_backend.domain.models import Brand, OtaTrack
 
 SUPPORTED_TRACKS: tuple[OtaTrack, ...] = ("A", "C", "F", "H")
 BOOTSTRAP_TRACK_ORDER: tuple[OtaTrack, ...] = ("H", "F", "C", "A")
-DEFAULT_RUI_CANDIDATES = [8, 7]
+DEFAULT_RUI_CANDIDATES = [8, 7, 6]
 MANIFEST_SUFFIX_MAP = {
     "LATAM": "9A",
     "EUEX": "44",
