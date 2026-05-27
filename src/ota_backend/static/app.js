@@ -134,9 +134,10 @@ function configureFeatures(features) {
 }
 
 function brandLabel(brand) {
-  if (brand === "oppo") return "OPPO";
-  if (brand === "realme") return "Realme";
-  if (brand === "oneplus") return "OnePlus";
+  const lower = String(brand || "").toLowerCase().trim();
+  if (lower === "oppo") return `<span class="brand-badge oppo">OPPO</span>`;
+  if (lower === "realme") return `<span class="brand-badge realme">Realme</span>`;
+  if (lower === "oneplus") return `<span class="brand-badge oneplus">OnePlus</span>`;
   return brand || "-";
 }
 
@@ -278,15 +279,36 @@ function selectDevice(productModel) {
 async function loadReleases() {
   clearError(els.releaseError);
   const selectedModel = state.selectedProductModel || els.productModel.value.trim().toUpperCase();
-  els.releaseTitle.textContent = selectedModel ? "Device OTA Archive" : "Latest Releases";
-  els.releaseSummary.textContent = "Loading releases";
+  
+  if (!selectedModel) {
+    els.releaseTitle.textContent = "Device OTA Archive";
+    els.releaseSummary.textContent = "No device selected";
+    els.releaseRows.innerHTML = `
+      <tr>
+        <td colspan="5" class="empty-cell">
+          <div class="welcome-placeholder-card">
+            <svg class="welcome-placeholder-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="2" width="20" height="20" rx="2.5" ry="2.5"/>
+              <path d="M12 17h.01M12 12h.01M12 7h.01"/>
+            </svg>
+            <strong>Welcome to OPlus OTA Monitor</strong>
+            <span>Select a device on the left Control Deck to view its official and beta update history.</span>
+          </div>
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  els.releaseTitle.textContent = "Device OTA Archive";
+  els.releaseSummary.textContent = "Loading releases...";
   els.releaseRows.innerHTML = `<tr><td colspan="5" class="empty-cell">Loading releases...</td></tr>`;
 
   const params = new URLSearchParams({
-    limit: selectedModel ? "200" : "50",
-    sort: selectedModel ? "published" : "discovered",
+    limit: "200",
+    sort: "published",
+    product_model: selectedModel,
   });
-  if (selectedModel) params.set("product_model", selectedModel);
   if (state.releaseRegion) params.set("region_code", state.releaseRegion);
   if (state.releaseType) params.set("release_type", state.releaseType);
   if (state.releaseSearch) params.set("q", state.releaseSearch);
@@ -335,9 +357,25 @@ function renderReleases(total) {
           <td data-label="Type"><span class="release-badge ${release.release_type === "beta" ? "beta" : "official"}">${escapeHtml((release.release_type || "official").toUpperCase())}</span></td>
           <td data-label="Published">${formatDate(release.published_at || release.discovered_at)}</td>
           <td class="release-actions" data-label="Actions">
-            <button class="row-action" type="button" data-copy-release="${release.id}" title="Copy download URL">Copy</button>
-            <button class="row-action" type="button" data-open-release="${release.id}" title="Open download URL">Open</button>
-            ${String(release.download_url || "").includes("downloadCheck") && state.resolverEnabled ? `<button class="row-action" type="button" data-resolve-release="${release.id}" title="Resolve downloadCheck link">Resolve</button>` : ""}
+            <button class="row-action" type="button" data-copy-release="${release.id}" title="Copy download URL">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+              <span>Copy</span>
+            </button>
+            <button class="row-action" type="button" data-open-release="${release.id}" title="Open download URL">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/>
+              </svg>
+              <span>Open</span>
+            </button>
+            ${String(release.download_url || "").includes("downloadCheck") && state.resolverEnabled ? `
+            <button class="row-action" type="button" data-resolve-release="${release.id}" title="Resolve downloadCheck link">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+              </svg>
+              <span>Resolve</span>
+            </button>` : ""}
           </td>
         </tr>
       `,
