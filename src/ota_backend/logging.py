@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from collections.abc import Mapping
 from datetime import datetime, timezone
@@ -23,6 +24,19 @@ SENSITIVE_KEY_PARTS = (
     "service_role",
     "token",
 )
+
+_SENSITIVE_TEXT_PATTERNS = (
+    re.compile(r"bot\d+:[A-Za-z0-9_-]+"),
+    re.compile(r"sb_secret_[A-Za-z0-9_-]+"),
+    re.compile(r"sb_publishable_[A-Za-z0-9_-]+"),
+)
+
+
+def sanitize_text(value: str) -> str:
+    sanitized = value
+    for pattern in _SENSITIVE_TEXT_PATTERNS:
+        sanitized = pattern.sub("[REDACTED]", sanitized)
+    return sanitized
 
 
 def sanitize_value(key: str, value: Any) -> Any:
@@ -46,7 +60,7 @@ class JsonFormatter(logging.Formatter):
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "level": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
+            "message": sanitize_text(record.getMessage()),
         }
 
         for key, value in record.__dict__.items():
@@ -69,6 +83,8 @@ def configure_logging(level: str) -> None:
     root = logging.getLogger()
     root.handlers = [handler]
     root.setLevel(level.upper())
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
