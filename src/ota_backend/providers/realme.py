@@ -20,6 +20,11 @@ from ota_backend.providers.interfaces import (
 )
 
 
+MODEL_ALIAS_OVERRIDES: dict[tuple[str, str], tuple[str, ...]] = {
+    ("CPH2659", "1B"): ("CPH2659", "CPH2659IN"),
+}
+
+
 class RealmeOtaProvider(OtaProvider):
     """Live adapter around the GPLv3 realme-ota request/encryption implementation."""
 
@@ -79,7 +84,10 @@ class RealmeOtaProvider(OtaProvider):
     ) -> OtaProviderRelease:
         last_validation_error: Exception | None = None
         found_no_release = False
-        for upstream_model in _upstream_product_models(request.product_model):
+        for upstream_model in _upstream_product_models(
+            request.product_model,
+            request.manifest_code,
+        ):
             content: dict[str, Any] | None = None
             for ota_version in _seed_ota_versions(upstream_model, request.ota_track):
                 prepared = self._request_cls(
@@ -185,9 +193,22 @@ def _seed_ota_versions(product_model: str, ota_track: OtaTrack) -> tuple[str, st
     return primary, fallback
 
 
-def _upstream_product_models(product_model: str) -> tuple[str, ...]:
-    base_model = derive_ota_model(product_model)
-    return (product_model,) if base_model == product_model else (product_model, base_model)
+def _upstream_product_models(
+    product_model: str,
+    manifest_code: str | None = None,
+) -> tuple[str, ...]:
+    normalized_model = product_model.strip().upper()
+    normalized_manifest = (manifest_code or "").strip().upper()
+    candidates = MODEL_ALIAS_OVERRIDES.get((normalized_model, normalized_manifest))
+    if candidates is None:
+        base_model = derive_ota_model(normalized_model)
+        candidates = (
+            (normalized_model,)
+            if base_model == normalized_model
+            else (normalized_model, base_model)
+        )
+
+    return tuple(dict.fromkeys(candidates))
 
 
 def _walk(value: Any):

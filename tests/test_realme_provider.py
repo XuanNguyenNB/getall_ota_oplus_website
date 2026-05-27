@@ -212,6 +212,50 @@ def test_live_provider_retries_base_model_when_regional_model_has_no_release():
     assert result.computed_ota_version == "CPH2651_11.A.49_ID_202508282004"
 
 
+def test_live_provider_uses_controlled_alias_after_base_model_no_release():
+    class IndiaAliasRequest(Request):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.model = kwargs["model"]
+
+        def decrypt(self, _value):
+            if self.model == "CPH2659":
+                return json.dumps({"checkFailReason": "no version"})
+            return json.dumps(
+                {
+                    "realOtaVersion": "CPH2659IN_11.H.10_0100_202605270000",
+                    "realVersionName": "CPH2659IN_15.0.0.100(EX01)",
+                    "downloadUrl": "https://example.com/update.zip",
+                }
+            )
+
+    IndiaAliasRequest.constructions = []
+    provider = RealmeOtaProvider(
+        Settings(allow_live_ota=True),
+        request_cls=IndiaAliasRequest,
+        post=lambda *args, **kwargs: Response(),
+    )
+
+    result = provider.query(
+        OtaQuery(
+            product_model="CPH2659",
+            manifest_code="1B",
+            ota_track="H",
+            rui_candidates=[8],
+            language="en-EN",
+            beta=False,
+            brand="oppo",
+        )
+    )
+
+    assert [row["model"] for row in IndiaAliasRequest.constructions] == [
+        "CPH2659",
+        "CPH2659IN",
+    ]
+    assert result.product_model == "CPH2659"
+    assert result.computed_ota_version == "CPH2659_11.H.10_IN_202605270000"
+
+
 def test_live_provider_maps_timeout_without_leaking_request_content():
     def timeout(*_args, **_kwargs):
         raise httpx.ReadTimeout("timeout")

@@ -154,6 +154,9 @@ first tries the selected catalog model and then its derived base model when
 they differ, while preserving the selected catalog model on the stored result.
 Catalog aliases such as `KZ`, `LK`, `IND` and `_IND` may participate in this
 query fallback without being treated as evidence for a manifest code.
+Maintainer-controlled alias overrides may also add a regional model for known
+endpoint exceptions; the first active override tries `CPH2659IN` after
+`CPH2659` when manifest `1B` is explicitly selected.
 
 ## Release Identity
 
