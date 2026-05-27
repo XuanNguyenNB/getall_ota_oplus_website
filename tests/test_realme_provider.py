@@ -212,6 +212,40 @@ def test_live_provider_retries_base_model_when_regional_model_has_no_release():
     assert result.computed_ota_version == "CPH2651_11.A.49_ID_202508282004"
 
 
+def test_live_provider_accepts_non_display_release_without_display_version():
+    class NonDisplayRequest(Request):
+        def decrypt(self, _value):
+            return json.dumps(
+                {
+                    "realOtaVersion": "PMA110_11.A.46_0460_202605192330",
+                    "versionTypeId": "non_display",
+                    "downloadUrl": "https://example.com/downloadCheck/path",
+                }
+            )
+
+    provider = RealmeOtaProvider(
+        Settings(allow_live_ota=True),
+        request_cls=NonDisplayRequest,
+        post=lambda *args, **kwargs: Response(),
+    )
+
+    result = provider.query(
+        OtaQuery(
+            product_model="PMA110",
+            manifest_code="97",
+            ota_track="A",
+            rui_candidates=[6],
+            language="en-EN",
+            beta=False,
+            brand="oppo",
+        )
+    )
+
+    assert result.real_version_name == "PMA110_11.A.46_0460_202605192330"
+    assert result.version_type_id == "non_display"
+    assert result.computed_ota_version == "PMA110_11.A.46_CN_202605192330"
+
+
 def test_live_provider_uses_controlled_alias_after_base_model_no_release():
     class IndiaAliasRequest(Request):
         def __init__(self, **kwargs):

@@ -154,11 +154,11 @@ class RealmeOtaProvider(OtaProvider):
                 continue
 
             real_ota_version = _find_string(content, "realOtaVersion")
-            real_version_name = _find_string(content, "realVersionName")
             download_url = _find_download_url(content)
-            if not real_ota_version or not real_version_name or not download_url:
+            if not real_ota_version or not download_url:
                 found_no_release = True
                 continue
+            real_version_name = _find_string(content, "realVersionName") or real_ota_version
 
             return OtaProviderRelease(
                 brand=request.brand or infer_brand(None, request.product_model),
