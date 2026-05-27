@@ -15,6 +15,8 @@ services:
     profiles: ["bot"]
     restart: unless-stopped
     command: ["python", "-m", "ota_backend.telegram_bot"]
+    healthcheck:
+      disable: true
     env_file:
       - .env
     networks:
@@ -27,6 +29,8 @@ services:
     image: getall-ota-oplus:local
     profiles: ["jobs"]
     command: ["python", "-m", "ota_backend.worker", "--once"]
+    healthcheck:
+      disable: true
     env_file:
       - .env
     networks:
