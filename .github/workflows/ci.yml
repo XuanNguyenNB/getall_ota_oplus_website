@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  offline-proof:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install -e ".[dev]"
+      - name: Unit and integration proof
+        run: python -m pytest
+      - name: Compile
+        run: python -m compileall -q src tests
+      - name: Container configuration
+        env:
+          CLOUDFLARE_TUNNEL_TOKEN: ci-placeholder
+        run: |
+          cp .env.example .env
+          docker compose config --quiet

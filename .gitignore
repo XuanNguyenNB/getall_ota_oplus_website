@@ -1,0 +1,24 @@
+# Harness durable layer — each project instance generates its own data.
+harness.db
+harness.db-wal
+harness.db-shm
+
+# Server-only runtime configuration and secrets.
+.env
+.env.*
+!.env.example
+
+# Rust build output for harness tooling.
+target/
+dist/
+
+# Downloaded Harness CLI binary for installed project instances.
+scripts/bin/harness-cli
+
+# Local runtime/cache artifacts.
+.harness-backup/
+.pytest_cache/
+tmp/
+validation-artifacts/
+uvicorn-*.log
+__pycache__/

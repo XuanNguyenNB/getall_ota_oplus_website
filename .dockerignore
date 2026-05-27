@@ -1,0 +1,10 @@
+.env
+.env.*
+.git
+.pytest_cache
+__pycache__
+*.pyc
+harness.db
+tmp
+validation-artifacts
+uvicorn-*.log

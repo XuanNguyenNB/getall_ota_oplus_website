@@ -1,0 +1,47 @@
+services:
+  web:
+    build: .
+    image: getall-ota-oplus:local
+    restart: unless-stopped
+    env_file:
+      - .env
+    expose:
+      - "8000"
+    networks:
+      - runtime
+
+  bot:
+    image: getall-ota-oplus:local
+    profiles: ["bot"]
+    restart: unless-stopped
+    command: ["python", "-m", "ota_backend.telegram_bot"]
+    env_file:
+      - .env
+    networks:
+      - runtime
+    depends_on:
+      web:
+        condition: service_healthy
+
+  worker:
+    image: getall-ota-oplus:local
+    profiles: ["jobs"]
+    command: ["python", "-m", "ota_backend.worker", "--once"]
+    env_file:
+      - .env
+    networks:
+      - runtime
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "run", "--token", "${CLOUDFLARE_TUNNEL_TOKEN}"]
+    networks:
+      - runtime
+    depends_on:
+      web:
+        condition: service_healthy
+
+networks:
+  runtime:
+    driver: bridge

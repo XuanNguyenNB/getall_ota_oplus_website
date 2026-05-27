@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OPlus OTA Monitor</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand-block">
+          <div class="brand-mark">
+            <i data-lucide="radio-tower"></i>
+          </div>
+          <div>
+            <h1>OPlus OTA Monitor</h1>
+            <div class="subtitle">OPPO, Realme, OnePlus release tracking</div>
+            <div class="reference-note">Mock reference only; no runtime services are implemented.</div>
+          </div>
+        </div>
+
+        <div class="status-strip" aria-label="Service status">
+          <span class="status-pill ok"><span></span>Supabase</span>
+          <span class="status-pill ok"><span></span>Worker</span>
+          <span class="status-pill warn"><span></span>Telegram</span>
+        </div>
+
+        <div class="top-actions">
+          <button class="icon-button" type="button" title="Refresh">
+            <i data-lucide="refresh-cw"></i>
+          </button>
+          <button class="icon-button" type="button" title="Notifications">
+            <i data-lucide="bell"></i>
+          </button>
+          <button class="icon-button" type="button" title="Settings">
+            <i data-lucide="settings"></i>
+          </button>
+        </div>
+      </header>
+
+      <main class="main-grid">
+        <aside class="side-panel">
+          <section class="section-block">
+            <div class="section-head">
+              <h2>Query OTA</h2>
+              <span class="micro-chip">manual</span>
+            </div>
+
+            <div class="segmented" role="tablist" aria-label="Brand filter">
+              <button class="segment active" type="button" data-brand="all">All</button>
+              <button class="segment" type="button" data-brand="oppo">OPPO</button>
+              <button class="segment" type="button" data-brand="realme">Realme</button>
+              <button class="segment" type="button" data-brand="oneplus">OnePlus</button>
+            </div>
+
+            <label class="field">
+              <span>Device</span>
+              <div class="input-icon">
+                <i data-lucide="search"></i>
+                <input id="deviceSearch" type="search" value="RMX3301" />
+              </div>
+            </label>
+
+            <label class="field">
+              <span>Product model</span>
+              <input id="productModel" type="text" value="RMX3301" />
+            </label>
+
+            <div class="two-col">
+              <label class="field">
+                <span>Manifest</span>
+                <select id="manifestCode">
+                  <option value="1B" selected>IN / 1B</option>
+                  <option value="39">TH / 39</option>
+                  <option value="3C">VN / 3C</option>
+                  <option value="44">EU / 44</option>
+                  <option value="97">CN / 97</option>
+                  <option value="A7">ROW / A7</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Track</span>
+                <select id="otaTrack">
+                  <option>A</option>
+                  <option>C</option>
+                  <option>F</option>
+                  <option selected>H</option>
+                </select>
+              </label>
+            </div>
+
+            <label class="field">
+              <span>OS/RUI candidates</span>
+              <input id="ruiCandidates" type="text" value="8,7" />
+            </label>
+
+            <button class="primary-button" type="button" id="findButton">
+              <i data-lucide="satellite"></i>
+              Find OTA
+            </button>
+          </section>
+
+          <section class="section-block compact">
+            <div class="section-head">
+              <h2>Resolver</h2>
+              <span class="micro-chip">/resolve</span>
+            </div>
+            <label class="field">
+              <span>OTA URL</span>
+              <textarea id="resolverInput">https://gauss-componentotamanual.allawnofs.com/remove-05f5255d1433d908ba1414335b01b855/component-ota/26/03/02/0a22d5070bab4cff91e1d4e07d3c2ef0.zip</textarea>
+            </label>
+            <div class="button-row">
+              <button class="secondary-button" type="button" id="resolveButton">
+                <i data-lucide="link"></i>
+                Resolve
+              </button>
+              <button class="icon-button bordered" type="button" title="Copy resolved link">
+                <i data-lucide="copy"></i>
+              </button>
+            </div>
+          </section>
+        </aside>
+
+        <section class="content-panel">
+          <div class="toolbar">
+            <div>
+              <h2>Latest Releases</h2>
+              <div class="subtitle">12 releases in the current scan window</div>
+            </div>
+            <div class="toolbar-actions">
+              <button class="secondary-button tight" type="button">
+                <i data-lucide="filter"></i>
+                Filter
+              </button>
+              <button class="secondary-button tight" type="button">
+                <i data-lucide="download"></i>
+                Export
+              </button>
+            </div>
+          </div>
+
+          <div class="release-table-wrap">
+            <table class="release-table">
+              <thead>
+                <tr>
+                  <th>Brand</th>
+                  <th>Model</th>
+                  <th>Displayed version</th>
+                  <th>Manifest</th>
+                  <th>Track</th>
+                  <th>Seen</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="releaseRows"></tbody>
+            </table>
+          </div>
+
+          <div class="detail-grid">
+            <section class="detail-card">
+              <div class="section-head">
+                <h2>Selected OTA</h2>
+                <span class="micro-chip success">new</span>
+              </div>
+              <dl class="details-list" id="detailList"></dl>
+              <div class="button-row">
+                <button class="primary-button small" type="button">
+                  <i data-lucide="copy"></i>
+                  Copy URL
+                </button>
+                <button class="secondary-button small" type="button">
+                  <i data-lucide="external-link"></i>
+                  Open
+                </button>
+              </div>
+            </section>
+
+            <section class="detail-card">
+              <div class="section-head">
+                <h2>Scan Queue</h2>
+                <span class="micro-chip">day 4 / 7</span>
+              </div>
+              <div class="queue-grid">
+                <div>
+                  <span class="metric-value">1,445</span>
+                  <span class="metric-label">enabled devices</span>
+                </div>
+                <div>
+                  <span class="metric-value">206</span>
+                  <span class="metric-label">today</span>
+                </div>
+                <div>
+                  <span class="metric-value">18</span>
+                  <span class="metric-label">new ROMs</span>
+                </div>
+              </div>
+              <div class="progress-block">
+                <div class="progress-line">
+                  <span>Batch progress</span>
+                  <strong>62%</strong>
+                </div>
+                <div class="progress-track"><span style="width: 62%"></span></div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <aside class="right-panel">
+          <section class="section-block">
+            <div class="section-head">
+              <h2>Telegram Topics</h2>
+              <span class="micro-chip">forum</span>
+            </div>
+            <div class="topic-list">
+              <div class="topic-item">
+                <span class="brand-dot oppo"></span>
+                <div>
+                  <strong>OPPO</strong>
+                  <span>topic #111</span>
+                </div>
+                <i data-lucide="check-circle-2"></i>
+              </div>
+              <div class="topic-item">
+                <span class="brand-dot realme"></span>
+                <div>
+                  <strong>Realme</strong>
+                  <span>topic #222</span>
+                </div>
+                <i data-lucide="check-circle-2"></i>
+              </div>
+              <div class="topic-item muted">
+                <span class="brand-dot oneplus"></span>
+                <div>
+                  <strong>OnePlus</strong>
+                  <span>pending test</span>
+                </div>
+                <i data-lucide="alert-circle"></i>
+              </div>
+            </div>
+          </section>
+
+          <section class="section-block">
+            <div class="section-head">
+              <h2>Worker</h2>
+              <span class="micro-chip success">running</span>
+            </div>
+            <div class="event-list">
+              <div class="event-item">
+                <span>13:42</span>
+                <p>RMX3301 H track stored</p>
+              </div>
+              <div class="event-item">
+                <span>13:39</span>
+                <p>CPH2841TH queued</p>
+              </div>
+              <div class="event-item">
+                <span>13:33</span>
+                <p>Telegram OPPO topic sent</p>
+              </div>
+              <div class="event-item">
+                <span>13:27</span>
+                <p>Catalog import completed</p>
+              </div>
+            </div>
+          </section>
+        </aside>
+      </main>
+
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

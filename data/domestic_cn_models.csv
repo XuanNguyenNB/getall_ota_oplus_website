@@ -1,0 +1,10 @@
+brand,name,product_model,manifest_code,source,source_url,scan_enabled
+oppo,OPPO Find X8 Pro (CN),PKC110,97,domestic_cn_seed,https://www.oppo.com/cn/smartphones/series-find-x/find-x8-pro/specs/,true
+oppo,OPPO Find X8 Pro Satellite (CN),PKC130,97,domestic_cn_seed,https://www.oppo.com/cn/smartphones/series-find-x/find-x8-pro-satellite/specs/,true
+oneplus,OnePlus Ace 5 (CN),PKG110,97,domestic_cn_seed,https://www.opposhop.cn/cn/m/product/index?skuId=31478,true
+oneplus,OnePlus Ace 5 Ultra (CN),PLC110,97,domestic_cn_seed,https://www.opposhop.cn/cn/web/products/34931.html,true
+oneplus,OnePlus 15 (CN),PLK110,97,domestic_cn_seed,https://www.opposhop.cn/cn/m/product/index?skuId=36995,true
+oneplus,OnePlus Ace 6T (CN),PLR110,97,domestic_cn_seed,https://www.opposhop.cn/cn/m/product/index?skuId=37901,true
+realme,realme GT 8 Pro (CN),RMX5200,97,domestic_cn_seed,https://www.opposhop.cn/cn/web/products/39501.html?download_app=0,true
+realme,realme GT 8 (CN),RMX6699,97,domestic_cn_seed,https://www.opposhop.cn/cn/web/products/39218.html?download_app=0,true
+realme,realme Neo 8 (CN),RMX8899,97,domestic_cn_seed,https://www.opposhop.cn/cn/web/products/38828.html?download_app=0,true

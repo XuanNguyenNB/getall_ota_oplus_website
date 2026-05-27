@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OPlus OTA Monitor</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand-block">
+          <div class="brand-mark" aria-hidden="true">OTA</div>
+          <div>
+            <h1>OPlus OTA Monitor</h1>
+            <div class="subtitle">Public OTA archive and standard update lookup for OPPO, Realme, and OnePlus</div>
+          </div>
+        </div>
+        <div class="status-strip" aria-label="Service status">
+          <span class="status-pill" id="apiStatus"><span></span>Checking API</span>
+          <span class="status-pill muted" id="runtimeStatus">Local runtime</span>
+        </div>
+        <div class="top-actions">
+          <button class="icon-button" type="button" id="refreshButton" title="Refresh releases" aria-label="Refresh releases">Refresh</button>
+        </div>
+      </header>
+
+      <main class="main-grid">
+        <aside class="query-panel">
+          <section class="section-block">
+            <div class="section-head">
+              <h2>Find OTA</h2>
+              <span class="micro-chip">Protected</span>
+            </div>
+
+            <div class="segmented" role="group" aria-label="Brand filter">
+              <button class="segment active" type="button" data-brand="">All</button>
+              <button class="segment" type="button" data-brand="oppo">OPPO</button>
+              <button class="segment" type="button" data-brand="realme">Realme</button>
+              <button class="segment" type="button" data-brand="oneplus">OnePlus</button>
+            </div>
+
+            <label class="field">
+              <span>Search devices</span>
+              <input id="deviceSearch" type="search" autocomplete="off" placeholder="Name or product model" />
+            </label>
+            <div class="device-list" id="deviceList" aria-live="polite"></div>
+
+            <form id="otaForm" novalidate>
+              <label class="field">
+                <span>Product model</span>
+                <input id="productModel" name="product_model" type="text" autocomplete="off" placeholder="RMX3301" required />
+              </label>
+
+              <div class="two-col">
+                <label class="field">
+                  <span>Manifest</span>
+                  <select id="manifestCode" name="manifest_code" required>
+                    <option value="" selected disabled>Select manifest</option>
+                    <option value="00">EX / 00</option>
+                    <option value="A4">APC / A4</option>
+                    <option value="A5">OCA / A5</option>
+                    <option value="A6">MEA / A6</option>
+                    <option value="A7">ROW / A7</option>
+                    <option value="1A">TW / 1A</option>
+                    <option value="1B">IN / 1B</option>
+                    <option value="1E">AU / 1E</option>
+                    <option value="2C">SG / 2C</option>
+                    <option value="33">ID / 33</option>
+                    <option value="37">RU / 37</option>
+                    <option value="38">MY / 38</option>
+                    <option value="39">TH / 39</option>
+                    <option value="3B">JP / 3B</option>
+                    <option value="3C">VN / 3C</option>
+                    <option value="3E">PH / 3E</option>
+                    <option value="44">EUEX / 44</option>
+                    <option value="51">TR / 51</option>
+                    <option value="75">EG / 75</option>
+                    <option value="7B">MX / 7B</option>
+                    <option value="82">HK / 82</option>
+                    <option value="83">SA / 83</option>
+                    <option value="8D">EU-NO / 8D</option>
+                    <option value="97">CN / 97</option>
+                    <option value="9A">LATAM / 9A</option>
+                    <option value="9E">BR / 9E</option>
+                  </select>
+                </label>
+
+                <label class="field">
+                  <span>Track</span>
+                  <select id="otaTrack" name="ota_track" required>
+                    <option>A</option>
+                    <option>C</option>
+                    <option>F</option>
+                    <option selected>H</option>
+                  </select>
+                </label>
+              </div>
+
+              <label class="field">
+                <span>RUI candidates</span>
+                <input id="ruiCandidates" name="rui_candidates" type="text" value="8,7" inputmode="numeric" />
+              </label>
+
+              <button class="primary-button" type="submit" id="findButton">Find OTA</button>
+              <div class="challenge-panel" id="otaChallengePanel" hidden>
+                <div id="otaChallenge"></div>
+              </div>
+            </form>
+          </section>
+        </aside>
+
+        <section class="content-panel">
+          <div class="toolbar">
+            <div>
+              <h2 id="releaseTitle">Latest Releases</h2>
+              <div class="subtitle" id="releaseSummary">Loading releases</div>
+            </div>
+          </div>
+
+          <div class="release-filters" aria-label="Release filters">
+            <label class="field compact">
+              <span>Region</span>
+              <select id="releaseRegion">
+                <option value="">All</option>
+              </select>
+            </label>
+            <label class="field compact">
+              <span>Type</span>
+              <select id="releaseType">
+                <option value="">All</option>
+                <option value="official">Official</option>
+                <option value="beta">Beta</option>
+              </select>
+            </label>
+            <label class="field compact wide">
+              <span>Version</span>
+              <input id="releaseSearch" type="search" autocomplete="off" placeholder="Filter version" />
+            </label>
+          </div>
+
+          <div class="alert" id="releaseError" hidden></div>
+          <div class="release-table-wrap">
+            <table class="release-table">
+              <thead>
+                <tr>
+                  <th>Release</th>
+                  <th>Region</th>
+                  <th>Type</th>
+                  <th>Published</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="releaseRows"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <aside class="result-panel">
+          <section class="section-block">
+            <div class="section-head">
+              <h2>OTA Result</h2>
+              <span class="micro-chip" id="resultState">idle</span>
+            </div>
+            <div class="alert" id="otaError" hidden></div>
+            <dl class="details-list" id="resultDetails">
+              <dt>Status</dt>
+              <dd>Run a manual query to inspect release metadata.</dd>
+            </dl>
+            <div class="button-row">
+              <button class="primary-button small" type="button" id="copyResultButton" disabled>Copy URL</button>
+              <button class="secondary-button small" type="button" id="openResultButton" disabled>Open</button>
+            </div>
+          </section>
+          <section class="section-block resolver-panel" id="resolverPanel" hidden>
+            <div class="section-head">
+              <h2>Resolve Link</h2>
+              <span class="micro-chip">Web</span>
+            </div>
+            <form id="resolverForm">
+              <label class="field">
+                <span>OTA URL</span>
+                <textarea id="resolverUrl" rows="4" placeholder="https://..." required></textarea>
+              </label>
+              <button class="primary-button" type="submit" id="resolveButton">Resolve</button>
+              <div class="challenge-panel" id="resolverChallengePanel" hidden>
+                <div id="resolverChallenge"></div>
+              </div>
+            </form>
+            <div class="alert" id="resolverError" hidden></div>
+            <dl class="details-list" id="resolverDetails"></dl>
+          </section>
+        </aside>
+      </main>
+
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

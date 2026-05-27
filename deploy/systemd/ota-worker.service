@@ -1,0 +1,10 @@
+[Unit]
+Description=Run one OPlus OTA scanner shard
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/getall_ota_oplus_website
+ExecStart=/usr/bin/flock -n /run/ota-worker.lock /usr/bin/docker compose --profile jobs run --rm worker
+TimeoutStartSec=2h

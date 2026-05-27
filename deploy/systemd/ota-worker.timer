@@ -1,0 +1,11 @@
+[Unit]
+Description=Run OPlus OTA scanner daily
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 UTC
+Persistent=true
+RandomizedDelaySec=10m
+Unit=ota-worker.service
+
+[Install]
+WantedBy=timers.target
