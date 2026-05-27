@@ -41,7 +41,7 @@ Telegram `/resolve` remains deferred until the web surface has live proof.
 Configured allowlist default:
 
 ```text
-allawnofs.com,allawnos.com,allawntech.com,coloros.com,realmemobile.com,h2os.com
+allawnofs.com,allawnos.com,allawntech.com,allawnfs.com,coloros.com,realmemobile.com,h2os.com
 ```
 
 The implementation:
@@ -50,6 +50,8 @@ The implementation:
 - validates host suffixes;
 - resolves DNS and rejects every non-global IP result;
 - validates the transformed URL and every redirect target;
+- sends the OPlus metadata headers required by `downloadCheck` endpoints and
+  follows only validated redirect metadata to a final URL;
 - enforces timeout and redirect count;
 - uses metadata requests and does not stream package bytes through the app.
 

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import ipaddress
+import json
+import re
 import socket
 from dataclasses import dataclass
-from typing import Callable, Protocol
+from typing import Any, Callable, Iterable, Protocol
 from urllib.parse import urljoin, urlsplit, urlunsplit
 from uuid import uuid4
 
@@ -32,8 +34,31 @@ class ResolverTransport(Protocol):
         ...
 
 
+OPLUS_DOWNLOAD_CHECK_HEADERS = {
+    "User-Agent": "okhttp/3.14.9",
+    "userId": "oplus-ota|16000015",
+}
+
+OPLUS_INTERMEDIATE_MARKERS = ("downloadCheck", "servlet/download")
+
+
 class HttpxResolverTransport:
     def head(self, url: str, *, timeout: float) -> tuple[int, str | None]:
+        if _is_oplus_intermediate_url(url):
+            response = httpx.get(
+                url,
+                headers=OPLUS_DOWNLOAD_CHECK_HEADERS,
+                follow_redirects=False,
+                timeout=timeout,
+            )
+            if 300 <= response.status_code < 400:
+                return response.status_code, response.headers.get("location")
+            if response.status_code == 200:
+                location = _extract_oplus_download_location(response)
+                if location:
+                    return 302, location
+            return response.status_code, response.headers.get("location")
+
         response = httpx.head(url, follow_redirects=False, timeout=timeout)
         return response.status_code, response.headers.get("location")
 
@@ -73,6 +98,13 @@ class ResolverService:
                     current = self._validated_safe_url(urljoin(current, location))
                     continue
                 if 200 <= status_code < 300:
+                    # If the final URL still contains intermediate servlet endpoints,
+                    # it means the OPlus server did not redirect, indicating an expired token.
+                    if _is_oplus_intermediate_url(current):
+                        raise ResolverError(
+                            "RESOLVE_FAILED",
+                            "The OTA link has expired or the signature is invalid (upstream error 2306).",
+                        )
                     result = ResolverResult(input_url=original, resolved_url=current)
                     self._repository.record(
                         ResolveRequest(
@@ -145,3 +177,93 @@ class ResolverService:
             )
         except socket.gaierror:
             return []
+
+
+def _is_oplus_intermediate_url(value: str) -> bool:
+    return any(marker in value for marker in OPLUS_INTERMEDIATE_MARKERS)
+
+
+def _extract_oplus_download_location(response: httpx.Response) -> str | None:
+    try:
+        payload = response.json()
+    except json.JSONDecodeError:
+        payload = None
+
+    if isinstance(payload, dict):
+        _raise_for_oplus_error(payload)
+        for candidate in _iter_structured_url_candidates(payload):
+            if _looks_like_download_location(candidate):
+                return candidate
+
+    for candidate in _iter_text_url_candidates(response.text):
+        if _looks_like_download_location(candidate):
+            return candidate
+    return None
+
+
+def _raise_for_oplus_error(payload: dict[str, Any]) -> None:
+    response_code = payload.get("responseCode")
+    err_msg = str(payload.get("errMsg") or "")
+    if response_code == 2306 or str(response_code) == "2306" or "[2306]" in err_msg:
+        raise ResolverError(
+            "RESOLVE_FAILED",
+            "The OTA link has expired or the signature is invalid (upstream error 2306).",
+        )
+
+
+def _iter_structured_url_candidates(value: Any) -> Iterable[str]:
+    if isinstance(value, str):
+        normalized = _normalize_candidate_url(value)
+        if normalized:
+            yield normalized
+        return
+
+    if isinstance(value, list):
+        for item in value:
+            yield from _iter_structured_url_candidates(item)
+        return
+
+    if not isinstance(value, dict):
+        return
+
+    preferred_keys = (
+        "downloadUrl",
+        "download_url",
+        "manualUrl",
+        "manual_url",
+        "panelUrl",
+        "panel_url",
+        "url",
+        "link",
+        "href",
+    )
+    for key in preferred_keys:
+        if key in value:
+            yield from _iter_structured_url_candidates(value[key])
+    for key, item in value.items():
+        if key not in preferred_keys:
+            yield from _iter_structured_url_candidates(item)
+
+
+def _iter_text_url_candidates(value: str) -> Iterable[str]:
+    for match in re.finditer(r"https?:\\/\\/[^\"'\\s<>]+|https?://[^\"'\\s<>]+", value):
+        normalized = _normalize_candidate_url(match.group(0))
+        if normalized:
+            yield normalized
+
+
+def _normalize_candidate_url(value: str) -> str | None:
+    candidate = value.strip().replace("\\/", "/")
+    if not candidate.lower().startswith(("http://", "https://")):
+        return None
+    return candidate
+
+
+def _looks_like_download_location(value: str) -> bool:
+    lower_value = value.lower()
+    return (
+        ".zip" in lower_value
+        or ".ozip" in lower_value
+        or "downloadcheck" in lower_value
+        or "servlet/download" in lower_value
+    )

@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     enable_resolver: bool = False
     resolver_live_proof_confirmed: bool = False
     resolver_allowed_host_suffixes: str = (
-        "allawnofs.com,allawnos.com,allawntech.com,coloros.com,realmemobile.com,h2os.com"
+        "allawnofs.com,allawnos.com,allawntech.com,allawnfs.com,coloros.com,realmemobile.com,h2os.com"
     )
     resolver_timeout_seconds: float = Field(default=30, gt=0, le=120)
     resolver_max_redirects: int = Field(default=5, ge=0, le=10)

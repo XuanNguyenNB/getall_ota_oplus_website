@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import pytest
+import httpx
 from fastapi.testclient import TestClient
 
 from ota_backend.app import create_app
 from ota_backend.config import Settings
 from ota_backend.repositories.memory import InMemoryResolverRepository
-from ota_backend.services.resolver import ResolverError, ResolverService
+from ota_backend.services.resolver import HttpxResolverTransport, ResolverError, ResolverService
 
 
 class HeadTransport:
@@ -44,6 +45,33 @@ def test_resolver_applies_proven_component_hostname_transform_and_safe_redirect(
     assert repository.requests[0].status == "success"
 
 
+def test_resolver_handles_oplus_downloadcheck_redirect_to_cdn():
+    repository = InMemoryResolverRepository()
+    transport = HeadTransport(
+        [
+            (
+                302,
+                "https://gauss-compota-c-cn.allawnfs.com/remove-id/g-id/component-ota/file.zip?sign=abc",
+            ),
+            (200, None),
+        ]
+    )
+    service = ResolverService(
+        repository=repository,
+        allowed_suffixes=("coloros.com", "allawnfs.com"),
+        timeout_seconds=5,
+        max_redirects=2,
+        transport=transport,
+        dns_resolver=lambda _host: ["8.8.8.8"],
+    )
+
+    result = service.resolve("https://component-ota-gray.coloros.com/downloadCheck?id=1")
+
+    assert result.resolved_url.startswith("https://gauss-compota-c-cn.allawnfs.com/")
+    assert result.resolved_url.endswith("file.zip?sign=abc")
+    assert repository.requests[0].status == "success"
+
+
 def test_resolver_blocks_non_global_resolution_without_storing_unvalidated_url():
     repository = InMemoryResolverRepository()
     service = ResolverService(
@@ -61,6 +89,88 @@ def test_resolver_blocks_non_global_resolution_without_storing_unvalidated_url()
     assert error.value.code == "RESOLVE_BLOCKED_HOST"
     assert repository.requests[0].status == "blocked"
     assert repository.requests[0].input_url is None
+
+
+def test_downloadcheck_transport_sends_oplus_metadata_headers(monkeypatch):
+    seen_headers: dict[str, str] = {}
+
+    def fake_get(url, *, headers, follow_redirects, timeout):
+        seen_headers.update(headers)
+        assert url == "https://component-ota-gray.coloros.com/downloadCheck?id=1"
+        assert follow_redirects is False
+        assert timeout == 5
+        return httpx.Response(
+            302,
+            headers={
+                "location": "https://gauss-compota-c-cn.allawnfs.com/component-ota/file.zip"
+            },
+        )
+
+    monkeypatch.setattr("ota_backend.services.resolver.httpx.get", fake_get)
+
+    status_code, location = HttpxResolverTransport().head(
+        "https://component-ota-gray.coloros.com/downloadCheck?id=1", timeout=5
+    )
+
+    assert status_code == 302
+    assert location == "https://gauss-compota-c-cn.allawnfs.com/component-ota/file.zip"
+    assert seen_headers["User-Agent"] == "okhttp/3.14.9"
+    assert seen_headers["userId"] == "oplus-ota|16000015"
+
+
+def test_downloadcheck_transport_extracts_nested_json_download_url(monkeypatch):
+    def fake_get(url, *, headers, follow_redirects, timeout):
+        return httpx.Response(
+            200,
+            json={
+                "responseCode": 0,
+                "body": {
+                    "components": [
+                        {
+                            "componentPackets": [
+                                {
+                                    "manualUrl": "https://gauss-compota-c-cn.allawnfs.com/component-ota/file.zip"
+                                }
+                            ]
+                        }
+                    ]
+                },
+            },
+        )
+
+    monkeypatch.setattr("ota_backend.services.resolver.httpx.get", fake_get)
+
+    status_code, location = HttpxResolverTransport().head(
+        "https://component-ota-gray.coloros.com/downloadCheck?id=1", timeout=5
+    )
+
+    assert status_code == 302
+    assert location == "https://gauss-compota-c-cn.allawnfs.com/component-ota/file.zip"
+
+
+def test_downloadcheck_transport_maps_oplus_2306_to_resolver_error(monkeypatch):
+    def fake_get(url, *, headers, follow_redirects, timeout):
+        return httpx.Response(
+            200,
+            json={
+                "body": None,
+                "errMsg": "[2306]Params check failed: user id not exist",
+                "responseCode": 2306,
+            },
+        )
+
+    monkeypatch.setattr("ota_backend.services.resolver.httpx.get", fake_get)
+
+    with pytest.raises(ResolverError) as error:
+        HttpxResolverTransport().head(
+            "https://component-ota-gray.coloros.com/downloadCheck?id=1", timeout=5
+        )
+
+    assert error.value.code == "RESOLVE_FAILED"
+
+
+def test_default_resolver_allowlist_includes_oplus_allawnfs_cdn():
+    assert "allawnfs.com" in Settings().parsed_resolver_allowed_host_suffixes
 
 
 def test_resolver_endpoint_is_blocked_until_live_proof_flag_enables_it():
