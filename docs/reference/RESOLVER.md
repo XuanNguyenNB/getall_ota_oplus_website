@@ -20,6 +20,11 @@ The proof run must validate a real component link obtained during private
 Phase 1-3 activation. The local Universal OTA script documents a transformation
 from `componentotacostmanual` to `opexcostmanual`; the app implements that
 transform behind the release gate and validates all subsequent redirects.
+China legacy direct CDN links under `gauss-componentotacostmanual-cn` are
+validated with download-client metadata headers because the CDN rejects normal
+browser navigation with `403`. The browser UI therefore avoids opening those
+links directly and routes them through resolver validation instead. The
+resolver still does not proxy package contents.
 
 ## Web Interface
 

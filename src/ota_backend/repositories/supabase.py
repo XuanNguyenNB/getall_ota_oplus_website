@@ -39,6 +39,19 @@ def create_supabase_client(settings: Settings) -> Any:
     return create_client(settings.supabase_url, settings.supabase_server_key)
 
 
+def _should_refresh_release_metadata(
+    existing: Release,
+    release: OtaProviderRelease,
+) -> bool:
+    return (
+        existing.real_version_name == existing.real_ota_version
+        and release.real_version_name != release.real_ota_version
+    ) or (
+        existing.published_at is None
+        and release.published_at is not None
+    )
+
+
 def _rows(response: Any) -> list[dict[str, Any]]:
     data = getattr(response, "data", None)
     return data if isinstance(data, list) else []
@@ -442,7 +455,37 @@ class SupabaseReleaseRepository:
                 }
             }
             result = _payload(self._client.rpc("upsert_ota_release", legacy_payload).execute())
-        return PersistedRelease(release=_release(result["release"]), is_new=bool(result["is_new"]))
+        persisted = _release(result["release"])
+        is_new = bool(result["is_new"])
+        if not is_new and _should_refresh_release_metadata(persisted, release):
+            persisted = self._refresh_release_metadata(persisted, release)
+        return PersistedRelease(release=persisted, is_new=is_new)
+
+    def _refresh_release_metadata(
+        self,
+        existing: Release,
+        release: OtaProviderRelease,
+    ) -> Release:
+        payload = {
+            "real_version_name": release.real_version_name,
+            "about_update_url": release.about_update_url or existing.about_update_url,
+            "published_at": (
+                release.published_at.isoformat()
+                if release.published_at
+                else existing.published_at.isoformat()
+                if existing.published_at
+                else None
+            ),
+            "region_code": release.region_code or existing.region_code,
+        }
+        response = (
+            self._client.table("ota_releases")
+            .update(payload)
+            .eq("id", str(existing.id))
+            .execute()
+        )
+        rows = _rows(response)
+        return _release(rows[0]) if rows else existing
 
     def get_by_id(self, release_id: UUID) -> Release | None:
         response = self._client.table("ota_releases").select("*").eq("id", str(release_id)).limit(1).execute()

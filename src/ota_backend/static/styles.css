@@ -44,6 +44,10 @@
               transform 0.2s ease;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   min-height: 100vh;
   margin: 0;
@@ -248,6 +252,42 @@ h2 {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.top-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.language-switch {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(36px, 1fr));
+  min-height: 40px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.language-button {
+  min-height: 30px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.language-button:hover {
+  color: #ffffff;
+}
+
+.language-button.active {
+  color: #ffffff;
+  background: rgba(14, 165, 233, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.18);
 }
 
 /* Status Pill & Micro Chips */
@@ -629,6 +669,7 @@ textarea:focus {
   background: rgba(255, 255, 255, 0.04);
   border-color: var(--border);
   color: #e2e8f0;
+  text-decoration: none;
 }
 
 .secondary-button:hover:not(:disabled),
@@ -647,10 +688,65 @@ textarea:focus {
   padding: 0 14px;
 }
 
+.heading-with-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.info-popover {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.info-popover summary {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: 50%;
+  background: rgba(14, 165, 233, 0.12);
+  color: var(--accent-strong);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  list-style: none;
+}
+
+.info-popover summary::-webkit-details-marker {
+  display: none;
+}
+
+.info-popover summary:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 3px;
+}
+
+.info-popover p {
+  position: absolute;
+  top: 30px;
+  left: 0;
+  z-index: 30;
+  width: min(320px, calc(100vw - 48px));
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: #0d1425;
+  color: #dbeafe;
+  box-shadow: var(--shadow);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
 /* Device Selection list */
 .device-list {
   display: grid;
   gap: 8px;
+  align-content: start;
   flex-grow: 1; /* Automatically stretches to fill control deck empty space */
   max-height: 320px;
   overflow-y: auto;
@@ -695,6 +791,54 @@ textarea:focus {
   color: #cbd5e1;
   font-size: 11.5px;
   font-weight: 500;
+}
+
+.support-tools {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.support-tools h2 {
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.tool-list {
+  display: grid;
+  gap: 8px;
+}
+
+.tool-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  color: #e2e8f0;
+  text-decoration: none;
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.tool-link:hover {
+  border-color: rgba(56, 189, 248, 0.35);
+  background: rgba(14, 165, 233, 0.08);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.tool-link:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
 }
 
 /* Releases list Dashboard Layout */
@@ -882,7 +1026,7 @@ textarea:focus {
   gap: 6px;
   justify-content: flex-start;
   align-items: center;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
 }
 
 .row-action {
@@ -970,6 +1114,18 @@ textarea:focus {
   min-height: 65px;
 }
 
+.challenge-panel.silent-challenge-panel {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .error-text {
   color: #f87171;
   font-weight: 500;
@@ -1017,6 +1173,36 @@ textarea:focus {
   .control-deck {
     height: auto;
     overflow: visible;
+  }
+}
+
+@media (max-height: 820px) and (min-width: 1181px) {
+  .app-shell {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
+  .dashboard-cabinet {
+    height: auto;
+    min-height: 0;
+  }
+
+  .control-deck {
+    height: auto;
+    max-height: none;
+  }
+
+  .display-deck {
+    height: auto;
+  }
+
+  .releases-panel {
+    min-height: 430px;
+  }
+
+  .results-deck {
+    min-height: 280px;
   }
 }
 

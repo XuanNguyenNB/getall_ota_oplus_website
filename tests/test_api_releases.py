@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi.testclient import TestClient
 
 from ota_backend.app import create_app
@@ -90,3 +92,46 @@ def test_releases_filter_archive_metadata_and_sort_by_published():
     assert body["releases"][0]["release_type"] == "official"
     assert body["releases"][0]["source"] == "lsctool_archive"
     assert body["releases"][0]["security_patch"] == "2026-05-01"
+
+
+def test_release_upsert_refreshes_existing_technical_display_metadata():
+    releases = InMemoryReleaseRepository()
+    technical = releases.upsert_release(
+        OtaProviderRelease(
+            brand="oppo",
+            product_model="PKJ110",
+            manifest_code="97",
+            ota_track="C",
+            rui_version=8,
+            real_ota_version="PKJ110_11.C.65_1650_202604091920",
+            real_version_name="PKJ110_11.C.65_1650_202604091920",
+            computed_ota_version="PKJ110_11.C.65_CN_202604091920",
+            version_type_id="non_display",
+            about_update_url="https://example.test/component-ota/26/05/07/update.html",
+            download_url="https://example.test/update.zip",
+        ),
+        discovered_by="manual",
+    )
+
+    refreshed = releases.upsert_release(
+        OtaProviderRelease(
+            brand="oppo",
+            product_model="PKJ110",
+            manifest_code="97",
+            ota_track="C",
+            rui_version=8,
+            real_ota_version="PKJ110_11.C.65_1650_202604091920",
+            real_version_name="PKJ110_16.0.5.702(CN01)",
+            computed_ota_version="PKJ110_11.C.65_CN_202604091920",
+            version_type_id="non_display",
+            about_update_url="https://example.test/component-ota/26/05/07/update.html",
+            download_url="https://example.test/update.zip",
+            published_at=datetime(2026, 5, 7, tzinfo=timezone.utc),
+        ),
+        discovered_by="manual",
+    )
+
+    assert refreshed.is_new is False
+    assert refreshed.release.id == technical.release.id
+    assert refreshed.release.real_version_name == "PKJ110_16.0.5.702(CN01)"
+    assert refreshed.release.published_at == datetime(2026, 5, 7, tzinfo=timezone.utc)

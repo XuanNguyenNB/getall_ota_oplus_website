@@ -38,6 +38,13 @@ from ota_backend.repositories.interfaces import (
 )
 
 
+def _should_refresh_display_version(existing: Release, release: OtaProviderRelease) -> bool:
+    return (
+        existing.real_version_name == existing.real_ota_version
+        and release.real_version_name != release.real_ota_version
+    )
+
+
 def seed_devices() -> list[Device]:
     return [
         Device(
@@ -265,6 +272,12 @@ class InMemoryReleaseRepository(ReleaseRepository):
                 updated = replace(
                     existing,
                     last_seen_at=utc_now(),
+                    real_version_name=(
+                        release.real_version_name
+                        if _should_refresh_display_version(existing, release)
+                        else existing.real_version_name
+                    ),
+                    about_update_url=existing.about_update_url or release.about_update_url,
                     region_code=existing.region_code or release.region_code,
                     published_at=existing.published_at or release.published_at,
                     source_last_event_kind=(

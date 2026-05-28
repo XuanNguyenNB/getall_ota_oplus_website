@@ -28,8 +28,11 @@ rotated before live use. Prefer `sb_secret_...` over legacy service-role JWTs.
 ## Rate And Challenge Controls
 
 Turnstile tokens are validated server-side with expected action and configured
-hostname. The public action table stores a salted hash of the client boundary
-and normalized query hash, not raw IP addresses or challenge tokens.
+hostname. The browser renders Turnstile with manual execution and
+`interaction-only` appearance, so verification runs when a protected action is
+submitted and most legitimate visitors do not see a persistent widget. The
+public action table stores a salted hash of the client boundary and normalized
+query hash, not raw IP addresses or challenge tokens.
 
 Initial limits:
 

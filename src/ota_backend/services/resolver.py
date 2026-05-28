@@ -40,6 +40,9 @@ OPLUS_DOWNLOAD_CHECK_HEADERS = {
 }
 
 OPLUS_INTERMEDIATE_MARKERS = ("downloadCheck", "servlet/download")
+OPLUS_DIRECT_CDN_HEADERS = {"User-Agent": "curl/8.0.1"}
+OPLUS_CN_COST_AUTO_PREFIX = "gauss-compotacostauto-cn."
+OPLUS_CN_COST_MANUAL_PREFIX = "gauss-componentotacostmanual-cn."
 
 
 class HttpxResolverTransport:
@@ -59,7 +62,12 @@ class HttpxResolverTransport:
                     return 302, location
             return response.status_code, response.headers.get("location")
 
-        response = httpx.head(url, follow_redirects=False, timeout=timeout)
+        response = httpx.head(
+            url,
+            headers=OPLUS_DIRECT_CDN_HEADERS if _is_oplus_browser_blocked_direct_url(url) else None,
+            follow_redirects=False,
+            timeout=timeout,
+        )
         return response.status_code, response.headers.get("location")
 
 
@@ -88,6 +96,7 @@ class ResolverService:
             stored_input = original
             current = self._component_link_transform(original)
             current = self._validated_safe_url(current)
+            normalized_legacy_auto = _is_oplus_cn_cost_auto_url(original)
             for hop in range(self._max_redirects + 1):
                 status_code, location = self._transport.head(
                     current, timeout=self._timeout_seconds
@@ -117,6 +126,13 @@ class ResolverService:
                         )
                     )
                     return result
+                if normalized_legacy_auto:
+                    raise ResolverError(
+                        "RESOLVE_FAILED",
+                        "This legacy auto CDN link is no longer available after "
+                        "manual-host normalization. Use a fresh downloadCheck link "
+                        "or rerun the OTA query.",
+                    )
                 raise ResolverError("RESOLVE_FAILED", "The resolver upstream rejected this URL.")
             raise ResolverError("RESOLVE_FAILED", "Resolver did not reach a final URL.")
         except ResolverError as exc:
@@ -162,7 +178,13 @@ class ResolverService:
     @staticmethod
     def _component_link_transform(value: str) -> str:
         parsed = urlsplit(value)
-        hostname = (parsed.hostname or "").replace("componentotacostmanual", "opexcostmanual")
+        hostname = parsed.hostname or ""
+        if hostname.startswith(OPLUS_CN_COST_AUTO_PREFIX):
+            hostname = OPLUS_CN_COST_MANUAL_PREFIX + hostname.removeprefix(
+                OPLUS_CN_COST_AUTO_PREFIX
+            )
+        elif not hostname.startswith(OPLUS_CN_COST_MANUAL_PREFIX):
+            hostname = hostname.replace("componentotacostmanual", "opexcostmanual")
         netloc = hostname + (f":{parsed.port}" if parsed.port else "")
         return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, ""))
 
@@ -181,6 +203,18 @@ class ResolverService:
 
 def _is_oplus_intermediate_url(value: str) -> bool:
     return any(marker in value for marker in OPLUS_INTERMEDIATE_MARKERS)
+
+
+def _is_oplus_browser_blocked_direct_url(value: str) -> bool:
+    parsed = urlsplit(value)
+    hostname = parsed.hostname or ""
+    return hostname.startswith(OPLUS_CN_COST_MANUAL_PREFIX)
+
+
+def _is_oplus_cn_cost_auto_url(value: str) -> bool:
+    parsed = urlsplit(value)
+    hostname = parsed.hostname or ""
+    return hostname.startswith(OPLUS_CN_COST_AUTO_PREFIX)
 
 
 def _extract_oplus_download_location(response: httpx.Response) -> str | None:

@@ -56,6 +56,35 @@ class Client:
         return Rpc(self.results[name])
 
 
+class UpdateTable:
+    def __init__(self, row):
+        self.row = dict(row)
+        self.payload = None
+        self.filters = []
+
+    def update(self, payload):
+        self.payload = payload
+        self.row = {**self.row, **payload}
+        return self
+
+    def eq(self, key, value):
+        self.filters.append((key, value))
+        return self
+
+    def execute(self):
+        return SimpleNamespace(data=[self.row])
+
+
+class RefreshClient(Client):
+    def __init__(self, results, row):
+        super().__init__(results)
+        self.releases = UpdateTable(row)
+
+    def table(self, name):
+        assert name == "ota_releases"
+        return self.releases
+
+
 class DeviceTable:
     def __init__(self):
         self.update_payload = None
@@ -127,6 +156,54 @@ def test_release_repository_uses_atomic_upsert_rpc():
     assert client.calls[0][1]["p_region_code"] == "IN"
     assert client.calls[0][1]["p_release_type"] == "official"
     assert result.release.id == UUID(RELEASE_ROW["id"])
+
+
+def test_release_repository_refreshes_existing_technical_display_metadata():
+    stale = {
+        **RELEASE_ROW,
+        "brand": "oppo",
+        "product_model": "PKJ110",
+        "manifest_code": "97",
+        "ota_track": "C",
+        "rui_version": 8,
+        "real_ota_version": "PKJ110_11.C.65_1650_202604091920",
+        "real_version_name": "PKJ110_11.C.65_1650_202604091920",
+        "computed_ota_version": "PKJ110_11.C.65_CN_202604091920",
+        "about_update_url": "https://example.test/component-ota/26/05/07/update.html",
+        "download_url": "https://example.test/update.zip",
+        "region_code": None,
+        "published_at": None,
+    }
+    client = RefreshClient(
+        {"upsert_ota_release": {"release": stale, "is_new": False}},
+        stale,
+    )
+    repository = SupabaseReleaseRepository(client)
+
+    result = repository.upsert_release(
+        OtaProviderRelease(
+            brand="oppo",
+            product_model="PKJ110",
+            manifest_code="97",
+            ota_track="C",
+            rui_version=8,
+            real_ota_version=stale["real_ota_version"],
+            real_version_name="PKJ110_16.0.5.702(CN01)",
+            computed_ota_version=stale["computed_ota_version"],
+            version_type_id="non_display",
+            about_update_url=stale["about_update_url"],
+            download_url=stale["download_url"],
+            region_code="CN",
+            published_at=SimpleNamespace(isoformat=lambda: "2026-05-07T00:00:00+00:00"),
+        ),
+        discovered_by="manual",
+    )
+
+    assert result.is_new is False
+    assert result.release.real_version_name == "PKJ110_16.0.5.702(CN01)"
+    assert client.releases.payload["real_version_name"] == "PKJ110_16.0.5.702(CN01)"
+    assert client.releases.payload["region_code"] == "CN"
+    assert client.releases.filters == [("id", stale["id"])]
 
 
 def test_catalog_refresh_does_not_overwrite_existing_scan_progression():

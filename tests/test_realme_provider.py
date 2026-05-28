@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import timezone
 
 import httpx
 import pytest
@@ -86,6 +87,106 @@ def test_live_provider_builds_request_decrypts_and_parses_release():
     assert result.rui_version == 8
     assert result.computed_ota_version == "RMX3301_11.H.21_IN_202602281641"
     assert result.download_url == "https://opexcostmanual.example/update.zip"
+
+
+def test_live_provider_prefers_cn_manual_url_over_auto_url_and_preserves_host():
+    Request.constructions = []
+    Request.decrypted = {
+        "realOtaVersion": "PKJ110_11.A.63_0630_202509191808",
+        "realVersionName": "PKJ110_15.0.1.622(CN01)",
+        "url": "https://gauss-compotacostauto-cn.allawnfs.com/remove-id/component-ota/file.zip",
+        "manualUrl": "https://gauss-componentotacostmanual-cn.allawnfs.com/remove-id/component-ota/file.zip",
+    }
+    provider = RealmeOtaProvider(
+        Settings(allow_live_ota=True),
+        request_cls=Request,
+        post=lambda *args, **kwargs: Response(),
+    )
+
+    result = provider.query(
+        OtaQuery(
+            product_model="PKJ110",
+            manifest_code="97",
+            ota_track="A",
+            rui_candidates=[6],
+            language="en-EN",
+            beta=False,
+            brand="oppo",
+        )
+    )
+
+    assert (
+        result.download_url
+        == "https://gauss-componentotacostmanual-cn.allawnfs.com/remove-id/component-ota/file.zip"
+    )
+
+
+def test_live_provider_normalizes_cn_auto_url_when_manual_url_is_absent():
+    Request.constructions = []
+    Request.decrypted = {
+        "realOtaVersion": "PKJ110_11.A.63_0630_202509191808",
+        "realVersionName": "PKJ110_15.0.1.622(CN01)",
+        "downloadUrl": "https://gauss-compotacostauto-cn.allawnfs.com/remove-id/component-ota/file.zip",
+    }
+    provider = RealmeOtaProvider(
+        Settings(allow_live_ota=True),
+        request_cls=Request,
+        post=lambda *args, **kwargs: Response(),
+    )
+
+    result = provider.query(
+        OtaQuery(
+            product_model="PKJ110",
+            manifest_code="97",
+            ota_track="A",
+            rui_candidates=[6],
+            language="en-EN",
+            beta=False,
+            brand="oppo",
+        )
+    )
+
+    assert (
+        result.download_url
+        == "https://gauss-componentotacostmanual-cn.allawnfs.com/remove-id/component-ota/file.zip"
+    )
+
+
+def test_live_provider_derives_cn_display_version_from_update_notes():
+    Request.constructions = []
+    Request.decrypted = {
+        "realOtaVersion": "PKJ110_11.C.65_1650_202604091920",
+        "versionTypeId": "non_display",
+        "panelUrl": "https://gauss-compotacostauto-cn.allawnfs.com/remove-id/component-ota/26/05/07/update.html",
+        "downloadUrl": "https://component-ota-cn.allawntech.com/downloadCheck?id=1",
+    }
+
+    def note_response(*_args, **_kwargs):
+        return httpx.Response(200, text="<dt>update package（16.0.5.702Patch01）</dt>")
+
+    provider = RealmeOtaProvider(
+        Settings(allow_live_ota=True),
+        request_cls=Request,
+        post=lambda *args, **kwargs: Response(),
+        get=note_response,
+    )
+
+    result = provider.query(
+        OtaQuery(
+            product_model="PKJ110",
+            manifest_code="97",
+            ota_track="C",
+            rui_candidates=[8],
+            language="en-EN",
+            beta=False,
+            brand="oppo",
+        )
+    )
+
+    assert result.real_version_name == "PKJ110_16.0.5.702(CN01)"
+    assert result.published_at is not None
+    assert result.published_at.astimezone(timezone.utc).isoformat().startswith("2026-05-07")
+    assert result.region_code == "CN"
 
 
 def test_live_provider_tries_next_candidate_after_valid_no_update():

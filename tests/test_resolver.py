@@ -45,6 +45,74 @@ def test_resolver_applies_proven_component_hostname_transform_and_safe_redirect(
     assert repository.requests[0].status == "success"
 
 
+def test_resolver_preserves_cn_manual_cost_cdn_link_for_metadata_validation():
+    repository = InMemoryResolverRepository()
+    transport = HeadTransport([(200, None)])
+    service = ResolverService(
+        repository=repository,
+        allowed_suffixes=("allawnfs.com",),
+        timeout_seconds=5,
+        max_redirects=2,
+        transport=transport,
+        dns_resolver=lambda _host: ["8.8.8.8"],
+    )
+
+    result = service.resolve(
+        "https://gauss-componentotacostmanual-cn.allawnfs.com/remove-id/component-ota/file.zip"
+    )
+
+    assert transport.urls == [
+        "https://gauss-componentotacostmanual-cn.allawnfs.com/remove-id/component-ota/file.zip"
+    ]
+    assert result.resolved_url == transport.urls[0]
+    assert repository.requests[0].status == "success"
+
+
+def test_resolver_converts_cn_cost_auto_cdn_link_to_manual_cdn_link():
+    repository = InMemoryResolverRepository()
+    transport = HeadTransport([(200, None)])
+    service = ResolverService(
+        repository=repository,
+        allowed_suffixes=("allawnfs.com",),
+        timeout_seconds=5,
+        max_redirects=2,
+        transport=transport,
+        dns_resolver=lambda _host: ["8.8.8.8"],
+    )
+
+    result = service.resolve(
+        "https://gauss-compotacostauto-cn.allawnfs.com/remove-id/component-ota/file.zip"
+    )
+
+    assert transport.urls == [
+        "https://gauss-componentotacostmanual-cn.allawnfs.com/remove-id/component-ota/file.zip"
+    ]
+    assert result.resolved_url == transport.urls[0]
+    assert repository.requests[0].status == "success"
+
+
+def test_resolver_reports_stale_cn_cost_auto_cdn_link_after_normalization():
+    repository = InMemoryResolverRepository()
+    transport = HeadTransport([(403, None)])
+    service = ResolverService(
+        repository=repository,
+        allowed_suffixes=("allawnfs.com",),
+        timeout_seconds=5,
+        max_redirects=2,
+        transport=transport,
+        dns_resolver=lambda _host: ["8.8.8.8"],
+    )
+
+    with pytest.raises(ResolverError) as error:
+        service.resolve(
+            "https://gauss-compotacostauto-cn.allawnfs.com/remove-id/component-ota/file.zip"
+        )
+
+    assert error.value.code == "RESOLVE_FAILED"
+    assert "legacy auto CDN link" in error.value.message
+    assert repository.requests[0].status == "failed"
+
+
 def test_resolver_handles_oplus_downloadcheck_redirect_to_cdn():
     repository = InMemoryResolverRepository()
     transport = HeadTransport(
@@ -116,6 +184,28 @@ def test_downloadcheck_transport_sends_oplus_metadata_headers(monkeypatch):
     assert location == "https://gauss-compota-c-cn.allawnfs.com/component-ota/file.zip"
     assert seen_headers["User-Agent"] == "okhttp/3.14.9"
     assert seen_headers["userId"] == "oplus-ota|16000015"
+
+
+def test_direct_cn_cdn_transport_uses_download_client_metadata_headers(monkeypatch):
+    seen_headers: dict[str, str] = {}
+
+    def fake_head(url, *, headers, follow_redirects, timeout):
+        seen_headers.update(headers)
+        assert url == "https://gauss-componentotacostmanual-cn.allawnfs.com/component-ota/file.zip"
+        assert follow_redirects is False
+        assert timeout == 5
+        return httpx.Response(200)
+
+    monkeypatch.setattr("ota_backend.services.resolver.httpx.head", fake_head)
+
+    status_code, location = HttpxResolverTransport().head(
+        "https://gauss-componentotacostmanual-cn.allawnfs.com/component-ota/file.zip",
+        timeout=5,
+    )
+
+    assert status_code == 200
+    assert location is None
+    assert seen_headers["User-Agent"] == "curl/8.0.1"
 
 
 def test_downloadcheck_transport_extracts_nested_json_download_url(monkeypatch):
