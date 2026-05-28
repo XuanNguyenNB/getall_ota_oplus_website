@@ -14,6 +14,11 @@ const state = {
   challengeTokens: { ota: "", resolve: "" },
 };
 
+const challengeElementIds = {
+  ota: "otaChallenge",
+  resolve: "resolverChallenge",
+};
+
 const els = {
   apiStatus: document.querySelector("#apiStatus"),
   runtimeStatus: document.querySelector("#runtimeStatus"),
@@ -100,14 +105,17 @@ function activeHeaders(action) {
 
 function resetChallenge(action) {
   state.challengeTokens[action] = "";
-  if (window.turnstile) window.turnstile.reset(`#${action}Challenge`);
+  const elementId = challengeElementIds[action];
+  if (window.turnstile && elementId) window.turnstile.reset(`#${elementId}`);
 }
 
 function mountTurnstile() {
   if (!state.publicSite || !state.turnstileSiteKey || !window.turnstile) return;
-  ["ota", "resolver"].forEach((action) => {
-    if (action === "resolve" && !state.resolverEnabled) return;
-    window.turnstile.render(`#${action}Challenge`, {
+  const actions = state.resolverEnabled ? ["ota", "resolve"] : ["ota"];
+  actions.forEach((action) => {
+    const elementId = challengeElementIds[action];
+    if (!elementId) return;
+    window.turnstile.render(`#${elementId}`, {
       sitekey: state.turnstileSiteKey,
       action,
       callback: (token) => { state.challengeTokens[action] = token; },

@@ -25,6 +25,11 @@ def test_web_ui_static_assets_are_served(client):
     assert "release.source ||" not in script.text
     assert "ROW / A7" not in script.text
     assert "${manifestLabel} (${regionCode}) / ${manifestCode}" in script.text
+    assert 'resolve: "resolverChallenge"' in script.text
+    assert '["ota", "resolve"]' in script.text
+    assert '["ota", "resolver"]' not in script.text
+    assert 'activeHeaders("resolve")' in script.text
+    assert "`#${action}Challenge`" not in script.text
     assert style.status_code == 200
     assert "text/css" in style.headers["content-type"]
     assert "grid-template-columns: 92px minmax(0, 1fr)" in style.text
