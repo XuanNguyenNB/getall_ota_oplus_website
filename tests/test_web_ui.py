@@ -7,7 +7,7 @@ def test_web_ui_is_served(client):
     assert "Public OTA archive" in response.text
     assert "Private manual OTA lookup" not in response.text
     assert "<th>Source</th>" not in response.text
-    assert "/static/app.js" in response.text
+    assert "/static/app.js?v=" in response.text
     assert "runtimeStatus" in response.text
     assert "resolverPanel" in response.text
 
