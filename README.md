@@ -60,7 +60,7 @@ SUPABASE_SECRET_KEY=rotated-server-key
 ```powershell
 python -m ota_backend.catalog import-oxygen
 python -m ota_backend.catalog import-domestic-cn
-# or run both catalog imports in order:
+# or run catalog plus archive imports in order:
 python -m ota_backend.catalog import-all
 python -m ota_backend.catalog import-lsctool-archive --dry-run
 python -m ota_backend.catalog import-lsctool-archive

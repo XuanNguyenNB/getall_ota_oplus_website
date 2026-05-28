@@ -59,12 +59,15 @@ Sources:
 - ColorOS ROM `brandList` and `productList` APIs for older OPPO firmware rows.
 - OPPO-hosted OnePlus and realme listings plus OPPO Shop product pages, for
   domestic model codes such as `PLC110` and `RMX5200`.
+- LSCTool `device_data.json` plus `default_regions.txt` as supplemental
+  catalog coverage for China devices that are present in the OTA archive but
+  missing from crawlable official listings, for example `RMX3800`.
 - `data/domestic_cn_models.csv` for maintainer-verified seed rows that are no
   longer discoverable from crawlable official listing pages.
 
 The importer records per-row provenance in `devices.source` using values such
-as `oppo_cn_specs`, `coloros_rom`, `opposhop_cn`, and `domestic_cn_seed`.
-Manual overrides are never overwritten.
+as `oppo_cn_specs`, `coloros_rom`, `opposhop_cn`, `lsctool_cn_catalog`, and
+`domestic_cn_seed`. Manual overrides are never overwritten.
 
 ## realme-ota
 
@@ -111,7 +114,9 @@ python -m ota_backend.catalog import-lsctool-archive
 
 The importer stores `.zip` and `downloadCheck` links exactly as supplied,
 marks archive rows with `source=lsctool_archive`, maps region codes to manifest
-codes, and records `official` versus `beta` type. It does not resolve links or
+codes, and records `official` versus `beta` type. Missing China devices created
+from archive rows are visible and scan-enabled; non-China archive-only devices
+remain hidden from the default device picker. It does not resolve links or
 enqueue Telegram notifications during archive backfill.
 
 ## OPlus OTA Endpoints

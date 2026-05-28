@@ -48,6 +48,7 @@ LSCTOOL_DEFAULT_REGIONS_URL = "https://ota.lsctool.online/data/default_regions.t
 DOMESTIC_CN_SEED_PATH = Path(__file__).resolve().parents[2] / "data" / "domestic_cn_models.csv"
 DOMESTIC_CN_MANIFEST_CODE = "97"
 DOMESTIC_CN_SOURCE = "domestic_cn"
+LSCTOOL_CN_CATALOG_SOURCE = "lsctool_cn_catalog"
 LSCTOOL_ARCHIVE_SOURCE = "lsctool_archive"
 DOMESTIC_FETCH_WORKERS = 8
 
@@ -271,14 +272,15 @@ class ReleaseArchiveImporter:
         for device in devices:
             if self._device_repository.get_by_product_model(device.product_model) is not None:
                 continue
+            is_cn_device = device.manifest_code == DOMESTIC_CN_MANIFEST_CODE
             self._device_repository.upsert_catalog_device(
                 catalog_id=None,
                 brand=device.brand,
                 name=device.name,
                 product_model=device.product_model,
                 manifest_code=device.manifest_code,
-                scan_enabled=False,
-                source=LSCTOOL_ARCHIVE_SOURCE,
+                scan_enabled=is_cn_device,
+                source=LSCTOOL_CN_CATALOG_SOURCE if is_cn_device else LSCTOOL_ARCHIVE_SOURCE,
             )
 
     def _route_archive_release(self, release: OtaProviderRelease) -> OtaProviderRelease:
@@ -350,6 +352,7 @@ def fetch_domestic_cn_candidates(*, timeout_seconds: float = 30) -> DomesticCata
             source="opposhop_cn",
             timeout_seconds=timeout_seconds,
         ),
+        lambda: fetch_lsctool_cn_catalog_candidates(timeout_seconds=timeout_seconds),
     ):
         try:
             result = fetcher()
@@ -369,6 +372,53 @@ def fetch_domestic_cn_candidates(*, timeout_seconds: float = 30) -> DomesticCata
         candidates=deduped,
         skipped_count=skipped_count,
         error_count=error_count,
+    )
+
+
+def fetch_lsctool_cn_catalog_candidates(*, timeout_seconds: float = 30) -> DomesticCatalogFetch:
+    with httpx.Client(headers=LSCTOOL_HEADERS, timeout=timeout_seconds) as client:
+        device_data = client.get(LSCTOOL_DEVICE_DATA_URL).raise_for_status().json()
+        default_regions = client.get(LSCTOOL_DEFAULT_REGIONS_URL).raise_for_status().text
+    if not isinstance(device_data, dict):
+        raise RuntimeError("invalid LSCTool device catalog response")
+    return parse_lsctool_cn_catalog(
+        device_data=device_data,
+        default_regions_text=default_regions,
+    )
+
+
+def parse_lsctool_cn_catalog(
+    *,
+    device_data: dict[str, Any],
+    default_regions_text: str,
+) -> DomesticCatalogFetch:
+    candidates: list[CatalogDeviceCandidate] = []
+    skipped_count = 0
+    default_regions = parse_default_regions_text(default_regions_text)
+    for product_model, region_code in default_regions.items():
+        if region_code.upper() != "CN":
+            continue
+        metadata = device_data.get(product_model)
+        metadata = metadata if isinstance(metadata, dict) else {}
+        device_name = str(metadata.get("device_name") or product_model).strip()
+        brand = _infer_lsctool_brand(device_name, product_model)
+        if brand is None:
+            skipped_count += 1
+            continue
+        try:
+            candidates.append(
+                _domestic_candidate(
+                    brand=brand,
+                    name=_normalize_lsctool_cn_name(device_name, brand),
+                    product_model=product_model,
+                    source=LSCTOOL_CN_CATALOG_SOURCE,
+                )
+            )
+        except ValueError:
+            skipped_count += 1
+    return DomesticCatalogFetch(
+        candidates=_dedupe_candidates(candidates),
+        skipped_count=skipped_count,
     )
 
 
@@ -795,6 +845,28 @@ def _normalize_lsctool_device_name(name: str, brand: Brand) -> str:
     return cleaned.title()
 
 
+def _normalize_lsctool_cn_name(name: str, brand: Brand) -> str:
+    cleaned = re.sub(r"\s+", " ", html_lib.unescape(name)).strip()
+    cleaned = cleaned.replace("\u4e00\u52a0", "OnePlus")
+    cleaned = cleaned.replace("\u771f\u6211", "realme")
+    prefixes = {
+        "oppo": r"^oppo\s+",
+        "oneplus": r"^(oneplus|one\s+plus)\s+",
+        "realme": r"^realme\s+",
+    }
+    body = re.sub(prefixes[brand], "", cleaned, flags=re.IGNORECASE).strip()
+    body = re.sub(r"\b(GT|NEO)(\d)", r"\1 \2", body, flags=re.IGNORECASE)
+    body = re.sub(r"\s+", " ", body).strip().title()
+    body = re.sub(r"\bGt\b", "GT", body)
+    body = re.sub(r"\bRmx\b", "RMX", body)
+    body = re.sub(r"\b5g\b", "5G", body, flags=re.IGNORECASE)
+    if brand == "oppo":
+        return _normalize_domestic_name(f"OPPO {body}", brand)
+    if brand == "oneplus":
+        return _normalize_domestic_name(f"OnePlus {body}", brand)
+    return _normalize_domestic_name(f"realme {body}", brand)
+
+
 def _infer_archive_track(*values: str) -> OtaTrack | None:
     for value in values:
         match = OTA_TRACK_PATTERN.search(value or "")
@@ -959,7 +1031,7 @@ def main() -> None:
         )
         print(_format_summary("import-domestic-cn", result))
 
-    if args.command == "import-lsctool-archive":
+    if args.command in {"import-lsctool-archive", "import-all"}:
         archive = fetch_lsctool_archive(timeout_seconds=settings.realme_ota_timeout_seconds)
         archive_importer = ReleaseArchiveImporter(
             device_repository=app.state.device_repository,

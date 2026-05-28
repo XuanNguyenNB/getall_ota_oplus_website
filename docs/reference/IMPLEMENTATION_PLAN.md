@@ -27,7 +27,8 @@ checks pass.
 - Configure Supabase and `realme-ota` server runtime.
 - Import Oxygen catalog and run one bounded manual query and worker scan.
 - Import China domestic catalog rows with `python -m ota_backend.catalog
-  import-domestic-cn` when CN model coverage is required.
+  import-domestic-cn` when CN model coverage is required. This includes
+  LSCTool China catalog coverage for archive-backed models such as `RMX3800`.
 - Import third-party historical per-device OTA archive rows with
   `python -m ota_backend.catalog import-lsctool-archive` after applying the
   release archive metadata migration.

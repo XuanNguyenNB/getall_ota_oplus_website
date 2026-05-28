@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from types import SimpleNamespace
 from uuid import UUID
 
 from ota_backend.catalog import (
@@ -12,6 +13,7 @@ from ota_backend.catalog import (
     load_domestic_cn_seed,
     parse_coloros_rom_product_rows,
     parse_default_regions_text,
+    parse_lsctool_cn_catalog,
     parse_lsctool_archive,
     parse_lsctool_release_row,
     parse_oppo_cn_specs_page,
@@ -194,6 +196,40 @@ def test_parse_opposhop_product_page_extracts_oneplus_and_realme_models():
     assert oneplus[0].product_model == "PLC110"
     assert realme[0].name == "realme GT8 Pro (CN)"
     assert realme[0].product_model == "RMX5200"
+
+
+def test_parse_lsctool_cn_catalog_imports_visible_china_models():
+    parsed = parse_lsctool_cn_catalog(
+        device_data={
+            "RMX3800": {"device_name": "REALME GT6"},
+            "RMX3888": {"device_name": "REALME GT5 PRO"},
+            "RMX5010": {"device_name": "REALME GT7 PRO"},
+            "PKC110": {"device_name": "OPPO FIND X8 PRO"},
+            "PKG110": {"device_name": "ONEPLUS ACE 5"},
+            "XMI110": {"device_name": "XIAOMI 15"},
+            "RMX9999": {"device_name": "REALME GLOBAL"},
+        },
+        default_regions_text=(
+            "RMX3800 cn\n"
+            "RMX3888 cn\n"
+            "RMX5010 cn\n"
+            "PKC110 cn\n"
+            "PKG110 cn\n"
+            "XMI110 cn\n"
+            "RMX9999 gl\n"
+        ),
+    )
+
+    by_model = {candidate.product_model: candidate for candidate in parsed.candidates}
+    assert set(by_model) == {"RMX3800", "RMX3888", "RMX5010", "PKC110", "PKG110"}
+    assert by_model["RMX3800"].name == "realme GT 6 (CN)"
+    assert by_model["RMX3800"].brand == "realme"
+    assert by_model["RMX3800"].manifest_code == "97"
+    assert by_model["RMX3800"].scan_enabled is True
+    assert by_model["RMX3800"].source == "lsctool_cn_catalog"
+    assert by_model["PKC110"].name == "OPPO Find X8 Pro (CN)"
+    assert by_model["PKG110"].name == "OnePlus Ace 5 (CN)"
+    assert parsed.skipped_count == 1
 
 
 def test_load_domestic_seed_validates_required_fields(tmp_path):
@@ -397,10 +433,52 @@ def test_lsctool_archive_importer_creates_missing_devices_and_updates_track_stat
 
     assert summary.upserted_count == 2
     assert device is not None
-    assert device.scan_enabled is False
+    assert device.scan_enabled is True
+    assert device.source == "lsctool_cn_catalog"
     assert device.active_track == "H"
     assert device.bootstrap_done is True
     assert releases.list_releases(product_model="PKC110").total == 2
+
+
+def test_lsctool_archive_importer_keeps_non_cn_archive_devices_hidden():
+    devices = InMemoryDeviceRepository([])
+    releases = InMemoryReleaseRepository()
+    importer = ReleaseArchiveImporter(
+        device_repository=devices,
+        release_repository=releases,
+        import_repository=InMemoryCatalogImportRepository(),
+    )
+    archive = LsctoolArchiveFetch(
+        devices=[
+            CatalogDeviceCandidate(
+                catalog_id=None,
+                brand="oneplus",
+                name="OnePlus 15 (GLO)",
+                product_model="CPH2747",
+                manifest_code="A7",
+                scan_enabled=False,
+                source="lsctool_archive",
+            )
+        ],
+        releases=[
+            parse_lsctool_release_row(
+                _lsctool_row(
+                    version_name="CPH2747_16.0.5.703(EX01)",
+                    ota_version="CPH2747_11.A.33_0330_202604102049",
+                    region="GL",
+                ),
+                product_model="CPH2747",
+                brand="oneplus",
+            )
+        ],
+    )
+
+    importer.import_lsctool_archive(archive)
+    device = devices.get_by_product_model("CPH2747")
+
+    assert device is not None
+    assert device.scan_enabled is False
+    assert device.source == "lsctool_archive"
 
 
 def test_lsctool_archive_routes_region_rows_to_existing_variant_device():
@@ -485,3 +563,82 @@ def test_cli_lsctool_archive_dry_run_does_not_require_supabase(monkeypatch, caps
     assert "dry_run=true" in output
     assert "fetched=1" in output
     assert "skipped=2" in output
+
+
+def test_cli_import_all_runs_oxygen_domestic_and_archive(monkeypatch, capsys):
+    from ota_backend import catalog
+
+    devices = InMemoryDeviceRepository([])
+    releases = InMemoryReleaseRepository()
+    imports = InMemoryCatalogImportRepository()
+    app = SimpleNamespace(
+        state=SimpleNamespace(
+            device_repository=devices,
+            release_repository=releases,
+            catalog_import_repository=imports,
+        )
+    )
+    monkeypatch.setattr(
+        catalog,
+        "get_settings",
+        lambda: SimpleNamespace(
+            repository_backend="supabase",
+            realme_ota_timeout_seconds=30,
+        ),
+    )
+    monkeypatch.setattr(catalog, "create_app", lambda settings: app)
+    monkeypatch.setattr(
+        catalog,
+        "fetch_oxygen_rows",
+        lambda timeout_seconds: [
+            {
+                "id": 1,
+                "name": "OPPO Find X8 Pro",
+                "product_names": "CPH2659IN",
+                "enabled": 1,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        catalog,
+        "fetch_domestic_cn_candidates",
+        lambda timeout_seconds: DomesticCatalogFetch(
+            candidates=[
+                CatalogDeviceCandidate(
+                    catalog_id=None,
+                    brand="realme",
+                    name="realme GT 6 (CN)",
+                    product_model="RMX3800",
+                    manifest_code="97",
+                    scan_enabled=True,
+                    source="lsctool_cn_catalog",
+                )
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        catalog,
+        "fetch_lsctool_archive",
+        lambda timeout_seconds: LsctoolArchiveFetch(
+            devices=[],
+            releases=[
+                parse_lsctool_release_row(
+                    _lsctool_row(
+                        version_name="RMX3800_16.0.5.740(CN01)",
+                        ota_version="RMX3800_11.F.28_2280_202604141141",
+                    ),
+                    product_model="RMX3800",
+                    brand="realme",
+                )
+            ],
+        ),
+    )
+    monkeypatch.setattr("sys.argv", ["catalog", "import-all"])
+
+    catalog.main()
+
+    output = capsys.readouterr().out
+    assert output.index("command=import-oxygen") < output.index("command=import-domestic-cn")
+    assert output.index("command=import-domestic-cn") < output.index("command=import-lsctool-archive")
+    assert devices.get_by_product_model("RMX3800").scan_enabled is True
+    assert releases.list_releases(product_model="RMX3800").total == 1
