@@ -24,7 +24,8 @@ Catalog import must:
 
 Domestic China import supplements Oxygen with official OPPO, OnePlus and
 realme sources. Verified domestic rows use manifest `97`, keep source
-provenance, and are scan-enabled by default.
+provenance, and remain catalog-visible. They are not auto-scan enabled until
+an operator enables their model group or variant through Telegram.
 
 Historical multi-release archive rows can be imported from the LSCTool static
 dataset. These rows are marked as third-party archive data, keep original
@@ -124,8 +125,12 @@ Recurring scans check the active track and the next track only.
 ### Phase 3 Scanner Status
 
 The scanner implements the accepted bootstrap and recurring track rules against
-both offline repositories and the opt-in Supabase/live-provider runtime.
-Worker-discovered releases are persisted with `discovered_by="worker"`.
+both offline repositories and the opt-in Supabase/live-provider runtime. It
+only creates tasks for variants with `scan_enabled=true`,
+`scan_eligibility="active_scan"` and a valid manifest, while the public catalog
+can still show archive-only devices. Sharding is based on `scan_group_key`, so
+regional variants of the same device family are scanned in the same cycle
+slot. Worker-discovered releases are persisted with `discovered_by="worker"`.
 
 ## OS/RUI Candidates
 
@@ -154,9 +159,12 @@ first tries the selected catalog model and then its derived base model when
 they differ, while preserving the selected catalog model on the stored result.
 Catalog aliases such as `KZ`, `LK`, `IND` and `_IND` may participate in this
 query fallback without being treated as evidence for a manifest code.
-Maintainer-controlled alias overrides may also add a regional model for known
-endpoint exceptions; the first active override tries `CPH2659IN` after
-`CPH2659` when manifest `1B` is explicitly selected.
+For manifests whose region uses suffixed upstream models, the provider also
+appends region model variants after the exact catalog model and before the
+derived base model: manifest `1B` (India) tries `{model}IN`, `{model}IND`,
+`{model}_IND`, `{model}_IN`, and manifest `44` (EU) tries `{model}EEA`,
+`{model}EUEX`. Variants are only queried when the exact model returns no
+release, so devices that resolve directly cost no extra upstream requests.
 
 ## Release Identity
 

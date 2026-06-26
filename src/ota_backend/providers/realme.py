@@ -23,8 +23,15 @@ from ota_backend.providers.interfaces import (
 )
 
 
-MODEL_ALIAS_OVERRIDES: dict[tuple[str, str], tuple[str, ...]] = {
-    ("CPH2659", "1B"): ("CPH2659", "CPH2659IN"),
+# Region-specific upstream model suffixes. Some catalog models only return an
+# OTA when queried with a region-suffixed variant under the matching manifest
+# (e.g. India model CPH2659 resolves as CPH2659IN, DN2101 as DN2101IND). The
+# exact catalog model is always tried first; these variants are only attempted
+# when it returns no release, so devices that resolve directly cost no extra
+# upstream requests.
+REGION_MODEL_VARIANT_SUFFIXES: dict[str, tuple[str, ...]] = {
+    "1B": ("IN", "IND", "_IND", "_IN"),
+    "44": ("EEA", "EUEX"),
 }
 OPLUS_CN_COST_AUTO_PREFIX = "gauss-compotacostauto-cn."
 OPLUS_CN_COST_MANUAL_PREFIX = "gauss-componentotacostmanual-cn."
@@ -262,14 +269,15 @@ def _upstream_product_models(
 ) -> tuple[str, ...]:
     normalized_model = product_model.strip().upper()
     normalized_manifest = (manifest_code or "").strip().upper()
-    candidates = MODEL_ALIAS_OVERRIDES.get((normalized_model, normalized_manifest))
-    if candidates is None:
-        base_model = derive_ota_model(normalized_model)
-        candidates = (
-            (normalized_model,)
-            if base_model == normalized_model
-            else (normalized_model, base_model)
-        )
+
+    candidates: list[str] = [normalized_model]
+    for suffix in REGION_MODEL_VARIANT_SUFFIXES.get(normalized_manifest, ()):
+        if not normalized_model.endswith(suffix):
+            candidates.append(f"{normalized_model}{suffix}")
+
+    base_model = derive_ota_model(normalized_model)
+    if base_model != normalized_model:
+        candidates.append(base_model)
 
     return tuple(dict.fromkeys(candidates))
 

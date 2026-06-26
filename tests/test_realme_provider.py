@@ -212,7 +212,18 @@ def test_live_provider_tries_next_candidate_after_valid_no_update():
         post=lambda *args, **kwargs: Response(),
     )
 
-    assert provider.query(_query()).rui_version == 7
+    # Manifest 39 (TH) has no region model variant, so this isolates the
+    # rui-candidate fallback from the region-suffix retry path.
+    no_variant_query = OtaQuery(
+        product_model="RMX3301",
+        manifest_code="39",
+        ota_track="H",
+        rui_candidates=[8, 7],
+        language="en-EN",
+        beta=False,
+        brand="realme",
+    )
+    assert provider.query(no_variant_query).rui_version == 7
 
 
 def test_live_provider_retries_upstream_fallback_seed_after_rejected_primary_seed():
@@ -389,6 +400,95 @@ def test_live_provider_uses_controlled_alias_after_base_model_no_release():
     ]
     assert result.product_model == "CPH2659"
     assert result.computed_ota_version == "CPH2659_11.H.10_IN_202605270000"
+
+
+def test_live_provider_tries_india_variant_for_any_model_under_manifest_1b():
+    class NordVariantRequest(Request):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.model = kwargs["model"]
+
+        def decrypt(self, _value):
+            if self.model in ("DN2101", "DN2101IN"):
+                return json.dumps({"checkFailReason": "no version"})
+            return json.dumps(
+                {
+                    "realOtaVersion": "DN2101IND_11.C.18_0180_202605270000",
+                    "realVersionName": "DN2101IND_11.3.0.180(EX01)",
+                    "downloadUrl": "https://example.com/update.zip",
+                }
+            )
+
+    NordVariantRequest.constructions = []
+    provider = RealmeOtaProvider(
+        Settings(allow_live_ota=True),
+        request_cls=NordVariantRequest,
+        post=lambda *args, **kwargs: Response(),
+    )
+
+    result = provider.query(
+        OtaQuery(
+            product_model="DN2101",
+            manifest_code="1B",
+            ota_track="C",
+            rui_candidates=[8],
+            language="en-EN",
+            beta=False,
+            brand="oneplus",
+        )
+    )
+
+    assert [row["model"] for row in NordVariantRequest.constructions] == [
+        "DN2101",
+        "DN2101IN",
+        "DN2101IND",
+    ]
+    assert result.product_model == "DN2101"
+
+
+def test_live_provider_tries_eu_variant_under_manifest_44():
+    class EuVariantRequest(Request):
+        url = "https://component-otapc-eu.allawnos.com/update/v3"
+
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.model = kwargs["model"]
+
+        def decrypt(self, _value):
+            if self.model == "DN2103":
+                return json.dumps({"checkFailReason": "no version"})
+            return json.dumps(
+                {
+                    "realOtaVersion": "DN2103EEA_11.C.18_0180_202605270000",
+                    "realVersionName": "DN2103EEA_11.3.0.180(EX01)",
+                    "downloadUrl": "https://example.com/update.zip",
+                }
+            )
+
+    EuVariantRequest.constructions = []
+    provider = RealmeOtaProvider(
+        Settings(allow_live_ota=True),
+        request_cls=EuVariantRequest,
+        post=lambda *args, **kwargs: Response(),
+    )
+
+    result = provider.query(
+        OtaQuery(
+            product_model="DN2103",
+            manifest_code="44",
+            ota_track="C",
+            rui_candidates=[8],
+            language="en-EN",
+            beta=False,
+            brand="oneplus",
+        )
+    )
+
+    assert [row["model"] for row in EuVariantRequest.constructions] == [
+        "DN2103",
+        "DN2103EEA",
+    ]
+    assert result.product_model == "DN2103"
 
 
 def test_live_provider_maps_timeout_without_leaking_request_content():
