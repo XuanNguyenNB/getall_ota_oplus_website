@@ -26,3 +26,12 @@ tmp/
 validation-artifacts/
 uvicorn-*.log
 __pycache__/
+
+# Coverage + transient agent/automation artifacts.
+.coverage
+.codex/
+.playwright-mcp/
+archive_candidates.txt
+
+# Local-only WebADB experiment, not part of the FastAPI app.
+webadb-local/
