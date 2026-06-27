@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OPlus OTA — Quản lý Scan</title>
+    <link rel="icon" href="data:," />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      // Apply the saved theme before first paint to avoid a flash.
+      (function () {
+        try {
+          var stored = window.localStorage.getItem("oplus_ota_theme");
+          var dark = stored
+            ? stored === "dark"
+            : window.matchMedia("(prefers-color-scheme: dark)").matches;
+          if (dark) document.documentElement.classList.add("dark");
+        } catch (_e) {}
+      })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css?v=tailwind-redesign" />
+  </head>
+  <body>
+    <div class="admin-shell">
+      <header class="topbar">
+        <a class="brand-block" href="/admin" aria-label="OPlus OTA Admin">
+          <div class="brand-mark" aria-hidden="true">
+            <svg class="brand-logo-svg" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2 3 6.5 12 11l9-4.5L12 2Z" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M3 12 12 16.5 21 12" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M3 17.5 12 22l9-4.5" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div class="brand-copy">
+            <h1>OPlus OTA — Quản lý Scan</h1>
+            <div class="subtitle">Bảng điều khiển nội bộ</div>
+          </div>
+        </a>
+        <div class="admin-row tight">
+          <span id="whoami" class="admin-muted"></span>
+          <button id="logoutBtn" class="admin-button ghost sm hidden" type="button">Đăng xuất</button>
+          <a class="admin-button ghost sm" href="/">Trang chính</a>
+        </div>
+      </header>
+
+      <!-- LOGIN -->
+      <section id="loginView" class="admin-panel admin-login-box hidden">
+        <h2>Đăng nhập admin</h2>
+        <form id="loginForm">
+          <label class="field"><span>Email</span><input id="email" type="email" autocomplete="username" required /></label>
+          <label class="field"><span>Mật khẩu</span><input id="password" type="password" autocomplete="current-password" required /></label>
+          <button class="primary-button" type="submit">Đăng nhập</button>
+        </form>
+        <p id="loginErr" class="admin-error-text"></p>
+      </section>
+
+      <!-- APP -->
+      <main id="appView" class="admin-layout hidden">
+        <nav class="admin-sidebar" aria-label="Điều hướng admin">
+          <a class="admin-nav-item active" href="#statusSection">Trạng thái</a>
+          <a class="admin-nav-item" href="#searchSection">Tìm &amp; bật/tắt</a>
+          <a class="admin-nav-item" href="#resultsPanel">Kết quả</a>
+        </nav>
+        <div class="admin-workspace">
+          <section id="statusSection" class="admin-panel">
+            <div class="admin-panel-head">
+              <div>
+                <h2>Trạng thái</h2>
+                <p class="admin-muted">Tổng quan run scan gần nhất</p>
+              </div>
+              <div class="admin-row tight">
+                <button id="refreshBtn" class="admin-button ghost sm" type="button">Làm mới</button>
+                <button id="disableAllBtn" class="admin-button danger sm" type="button">Tắt toàn bộ scan</button>
+              </div>
+            </div>
+            <div class="stat-grid" id="statGrid">
+              <div class="stat"><div class="stat-num" id="statEnabled">—</div><div class="stat-label">Model đang scan</div><div class="stat-delta">&nbsp;</div></div>
+              <div class="stat"><div class="stat-num" id="statRunStatus">—</div><div class="stat-label">Run gần nhất</div><div class="stat-delta">&nbsp;</div></div>
+              <div class="stat"><div class="stat-num" id="statRunTasks">—</div><div class="stat-label">Task (done/fail/pending)</div><div class="stat-delta">&nbsp;</div></div>
+            </div>
+          </section>
+
+          <section id="searchSection" class="admin-panel">
+            <div class="admin-panel-head">
+              <div>
+                <h2>Tìm &amp; bật/tắt</h2>
+                <p class="admin-muted">Bật hoặc tắt scan theo nhóm và model</p>
+              </div>
+            </div>
+            <div class="admin-row">
+              <input id="searchInput" class="grow" placeholder="Tìm theo tên / model (vd: Reno13, CPH2659)" />
+              <button id="searchBtn" class="admin-button" type="button">Tìm</button>
+              <button id="listOnBtn" class="admin-button ghost" type="button">Đang bật</button>
+            </div>
+            <div class="admin-row tight mt-2.5">
+              <input id="modelInput" class="grow" placeholder="Bật nhanh theo model, cách nhau dấu phẩy" />
+              <button id="enableModelsBtn" class="admin-button sm" type="button">Bật model</button>
+            </div>
+          </section>
+
+          <section id="resultsPanel" class="admin-panel hidden">
+            <div class="admin-panel-head">
+              <div>
+                <h2 id="resultsTitle">Kết quả</h2>
+                <p class="admin-muted">Nhóm và biến thể model phù hợp</p>
+              </div>
+            </div>
+            <div id="results"></div>
+          </section>
+        </div>
+      </main>
+    </div>
+    <div id="toast" class="admin-toast hidden"></div>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="/static/admin.js?v=2"></script>
+  </body>
+</html>

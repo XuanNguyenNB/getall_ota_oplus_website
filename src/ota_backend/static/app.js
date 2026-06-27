@@ -1,256 +1,50 @@
-const state = {
-  brand: "",
-  devices: [],
-  devicesTotal: 0,
-  releases: [],
-  releasesTotal: 0,
-  selectedProductModel: "",
-  selectedDownloadUrl: "",
-  lastResult: null,
-  resolverResolvedUrl: "",
-  releaseRegion: "",
-  releaseType: "",
-  releaseSearch: "",
-  language: "vi",
-  deviceTimer: 0,
-  publicSite: false,
-  resolverEnabled: false,
-  turnstileSiteKey: "",
-  challengeTokens: { ota: "", resolve: "" },
-  challengeWidgets: { ota: null, resolve: null },
-  challengeWaiters: { ota: null, resolve: null },
-  turnstileScriptRequested: false,
-};
+// app.js
+//
+// Thin orchestrator for the public site. The split modules under
+// ``static/modules/`` own their own concerns (state, i18n, theme,
+// api, challenge, format, url-safety). This file wires them together,
+// owns the cached DOM references, and registers all DOM event
+// handlers. Render functions stay here because they are tightly
+// coupled to the ``els`` map and the template strings; lifting them
+// out doesn't help without first introducing a real templating layer.
 
-const challengeElementIds = {
-  ota: "otaChallenge",
-  resolve: "resolverChallenge",
-};
-
-const LANGUAGE_STORAGE_KEY = "oplus_ota_language";
-
-const translations = {
-  vi: {
-    "page.title": "OPlus OTA Monitor",
-    "page.subtitle": "Kho OTA công khai và tra cứu bản cập nhật chuẩn cho OPPO, Realme và OnePlus",
-    "status.ariaLabel": "Trạng thái dịch vụ",
-    "status.checkingApi": "Đang kiểm tra API",
-    "status.apiUnavailable": "API không khả dụng",
-    "runtime.publicProtected": "Môi trường công khai được bảo vệ",
-    "runtime.localOperator": "Môi trường vận hành nội bộ",
-    "language.ariaLabel": "Ngôn ngữ",
-    "actions.support": "Support",
-    "actions.refresh": "Làm mới",
-    "actions.findOta": "Tìm OTA",
-    "actions.finding": "Đang tìm...",
-    "actions.copyUrl": "Sao chép URL",
-    "actions.copy": "Sao chép",
-    "actions.open": "Mở",
-    "actions.resolve": "Resolve",
-    "actions.resolving": "Đang resolve...",
-    "control.title": "Bảng điều khiển",
-    "control.protected": "Được bảo vệ",
-    "brand.ariaLabel": "Lọc thương hiệu",
-    "brand.all": "Tất cả",
-    "field.searchDevices": "Tìm thiết bị",
-    "field.productModel": "Mã model",
-    "field.manifest": "Manifest",
-    "field.selectManifest": "Chọn manifest",
-    "field.track": "Track",
-    "field.ruiCandidates": "RUI candidates",
-    "placeholder.deviceSearch": "Tên máy hoặc mã model",
-    "placeholder.releaseSearch": "Lọc phiên bản",
-    "archive.title": "Kho OTA của thiết bị",
-    "archive.selectDevice": "Chọn thiết bị để xem các bản cập nhật",
-    "archive.filtersAria": "Bộ lọc bản cập nhật",
-    "archive.region": "Khu vực",
-    "archive.type": "Loại",
-    "archive.version": "Phiên bản",
-    "archive.all": "Tất cả",
-    "archive.official": "Chính thức",
-    "archive.beta": "Beta",
-    "archive.release": "Bản cập nhật",
-    "archive.published": "Ngày phát hành",
-    "archive.actions": "Thao tác",
-    "archive.noDeviceSelected": "Chưa chọn thiết bị",
-    "archive.loading": "Đang tải bản cập nhật...",
-    "archive.loadFailed": "Tải bản cập nhật thất bại",
-    "archive.couldNotLoad": "Không thể tải bản cập nhật.",
-    "archive.welcomeTitle": "Chào mừng đến OPlus OTA Monitor",
-    "archive.welcomeText": "Chọn thiết bị ở bảng điều khiển để xem lịch sử cập nhật chính thức và beta.",
-    "archive.noReleases": "Chưa có bản cập nhật nào. Truy vấn thành công và được lưu sẽ xuất hiện tại đây.",
-    "archive.summary": "{count} bản cập nhật đã lưu{suffix}",
-    "archive.summaryOne": "1 bản cập nhật đã lưu{suffix}",
-    "archive.summaryNone": "Chưa có bản cập nhật đã lưu{suffix}",
-    "archive.forModel": " cho {model}",
-    "device.loading": "Đang tải thiết bị...",
-    "device.loadFailed": "Không thể tải thiết bị.",
-    "device.none": "Không có thiết bị phù hợp. Bạn có thể nhập mã model thủ công.",
-    "device.manifestNeeded": "cần manifest",
-    "device.matchesShown": "Đang hiển thị {shown} / {total} kết quả",
-    "device.selected": "Đã chọn {model}",
-    "device.selectedManifestRequired": "Đã chọn {model}; hãy chọn manifest",
-    "result.title": "Kết quả OTA",
-    "result.status": "Trạng thái",
-    "result.defaultStatus": "Chọn thiết bị ở bảng điều khiển rồi gửi truy vấn chuẩn.",
-    "result.state.idle": "chờ",
-    "result.state.loading": "đang tải",
-    "result.state.error": "lỗi",
-    "result.state.new": "mới",
-    "result.state.known": "đã biết",
-    "result.brand": "Thương hiệu",
-    "result.productModel": "Mã model",
-    "result.manifest": "Manifest",
-    "result.track": "Track",
-    "result.rui": "RUI",
-    "result.displayedVersion": "Phiên bản hiển thị",
-    "result.otaVersion": "OTA version",
-    "result.computedOta": "Computed OTA",
-    "result.versionType": "Loại version",
-    "result.aboutUpdate": "Thông tin cập nhật",
-    "result.download": "Download",
-    "resolver.title": "Resolve link",
-    "resolver.infoLabel": "Giải thích Resolve link",
-    "resolver.infoText": "Resolver kiểm tra link OTA dạng downloadCheck/component protected và trả final URL tải trực tiếp khi OPlus cho phép. Ứng dụng không proxy hoặc tải hộ file ROM.",
-    "resolver.otaUrl": "OTA URL",
-    "resolver.resolvedUrl": "URL đã resolve",
-    "tools.title": "Công cụ hỗ trợ",
-    "tools.fastboot": "Fastboot Firmware Flasher",
-    "tools.resolverDownloader": "Link Resolver and Downloader",
-    "tools.driver": "Driver",
-    "tools.platformTools": "Platform Tools",
-    "toast.otaCompleted": "Truy vấn OTA hoàn tất",
-    "toast.linkResolved": "Đã resolve link",
-    "toast.downloadCopied": "Đã sao chép URL tải xuống",
-    "error.requestFailed": "Yêu cầu thất bại.",
-    "error.internal": "Lỗi client không xác định.",
-    "error.ruiCandidates": "RUI candidates phải là các số nguyên dương, phân tách bằng dấu phẩy.",
-    "challenge.loading": "Xác minh người dùng vẫn đang tải. Hãy thử lại.",
-    "challenge.notReady": "Xác minh người dùng chưa sẵn sàng. Hãy thử lại.",
-    "challenge.restarted": "Xác minh người dùng đã được khởi động lại.",
-    "challenge.timeout": "Xác minh người dùng quá thời gian. Hãy thử lại.",
-    "challenge.failed": "Xác minh người dùng thất bại. Hãy thử lại.",
-    "challenge.unsupported": "Trình duyệt này không thể hoàn tất xác minh người dùng.",
-    "release.copyTitle": "Sao chép URL tải xuống",
-    "release.openTitle": "Mở URL tải xuống",
-    "release.resolveTitle": "Resolve hoặc kiểm tra OTA URL",
-    "release.type.official": "CHÍNH THỨC",
-    "release.type.beta": "BETA",
-  },
-  en: {
-    "page.title": "OPlus OTA Monitor",
-    "page.subtitle": "Public OTA archive and standard update lookup for OPPO, Realme, and OnePlus",
-    "status.ariaLabel": "Service status",
-    "status.checkingApi": "Checking API",
-    "status.apiUnavailable": "API unavailable",
-    "runtime.publicProtected": "Public protected runtime",
-    "runtime.localOperator": "Local operator runtime",
-    "language.ariaLabel": "Language",
-    "actions.support": "Support",
-    "actions.refresh": "Refresh",
-    "actions.findOta": "Find OTA",
-    "actions.finding": "Finding...",
-    "actions.copyUrl": "Copy URL",
-    "actions.copy": "Copy",
-    "actions.open": "Open",
-    "actions.resolve": "Resolve",
-    "actions.resolving": "Resolving...",
-    "control.title": "Control Deck",
-    "control.protected": "Protected",
-    "brand.ariaLabel": "Brand filter",
-    "brand.all": "All",
-    "field.searchDevices": "Search devices",
-    "field.productModel": "Product model",
-    "field.manifest": "Manifest",
-    "field.selectManifest": "Select manifest",
-    "field.track": "Track",
-    "field.ruiCandidates": "RUI candidates",
-    "placeholder.deviceSearch": "Name or product model",
-    "placeholder.releaseSearch": "Filter version",
-    "archive.title": "Device OTA Archive",
-    "archive.selectDevice": "Select a device to view updates",
-    "archive.filtersAria": "Release filters",
-    "archive.region": "Region",
-    "archive.type": "Type",
-    "archive.version": "Version",
-    "archive.all": "All",
-    "archive.official": "Official",
-    "archive.beta": "Beta",
-    "archive.release": "Release",
-    "archive.published": "Published",
-    "archive.actions": "Actions",
-    "archive.noDeviceSelected": "No device selected",
-    "archive.loading": "Loading releases...",
-    "archive.loadFailed": "Release load failed",
-    "archive.couldNotLoad": "Could not load releases.",
-    "archive.welcomeTitle": "Welcome to OPlus OTA Monitor",
-    "archive.welcomeText": "Select a device on the left Control Deck to view its official and beta update history.",
-    "archive.noReleases": "No releases yet. Successful persisted queries will appear here.",
-    "archive.summary": "{count} persisted releases{suffix}",
-    "archive.summaryOne": "1 persisted release{suffix}",
-    "archive.summaryNone": "No persisted releases{suffix}",
-    "archive.forModel": " for {model}",
-    "device.loading": "Loading devices...",
-    "device.loadFailed": "Could not load devices.",
-    "device.none": "No matching devices. Enter a product model manually.",
-    "device.manifestNeeded": "manifest needed",
-    "device.matchesShown": "{shown} of {total} matches shown",
-    "device.selected": "Selected {model}",
-    "device.selectedManifestRequired": "Selected {model}; select its manifest",
-    "result.title": "OTA Result",
-    "result.status": "Status",
-    "result.defaultStatus": "Select a device on the left control deck and submit standard query.",
-    "result.state.idle": "idle",
-    "result.state.loading": "loading",
-    "result.state.error": "error",
-    "result.state.new": "new",
-    "result.state.known": "known",
-    "result.brand": "Brand",
-    "result.productModel": "Product model",
-    "result.manifest": "Manifest",
-    "result.track": "Track",
-    "result.rui": "RUI",
-    "result.displayedVersion": "Displayed version",
-    "result.otaVersion": "OTA version",
-    "result.computedOta": "Computed OTA",
-    "result.versionType": "Version type",
-    "result.aboutUpdate": "About update",
-    "result.download": "Download",
-    "resolver.title": "Resolve Link",
-    "resolver.infoLabel": "Resolve link info",
-    "resolver.infoText": "Resolver checks protected OTA links such as downloadCheck/component links and returns the final direct download URL when OPlus allows it. This app does not proxy or download ROM files for you.",
-    "resolver.otaUrl": "OTA URL",
-    "resolver.resolvedUrl": "Resolved URL",
-    "tools.title": "Support tools",
-    "tools.fastboot": "Fastboot Firmware Flasher",
-    "tools.resolverDownloader": "Link Resolver and Downloader",
-    "tools.driver": "Driver",
-    "tools.platformTools": "Platform Tools",
-    "toast.otaCompleted": "OTA query completed",
-    "toast.linkResolved": "Link resolved",
-    "toast.downloadCopied": "Download URL copied",
-    "error.requestFailed": "Request failed.",
-    "error.internal": "Unexpected client error.",
-    "error.ruiCandidates": "RUI candidates must be comma-separated positive integers.",
-    "challenge.loading": "Human verification is still loading. Try again.",
-    "challenge.notReady": "Human verification is not ready. Try again.",
-    "challenge.restarted": "Human verification was restarted.",
-    "challenge.timeout": "Human verification timed out. Try again.",
-    "challenge.failed": "Human verification failed. Try again.",
-    "challenge.unsupported": "This browser cannot complete human verification.",
-    "release.copyTitle": "Copy download URL",
-    "release.openTitle": "Open download URL",
-    "release.resolveTitle": "Resolve or validate OTA URL",
-    "release.type.official": "OFFICIAL",
-    "release.type.beta": "BETA",
-  },
-};
+import { api, clientError as _clientError } from "./modules/api.js";
+import {
+  activeHeaders,
+  mountTurnstile,
+  requestChallengeToken,
+  resetChallenge,
+} from "./modules/challenge.js";
+import {
+  brandLabel,
+  edlDateLabel,
+  edlSortTimestamp,
+  escapeHtml,
+  formatDate,
+  releasePublishedLabel,
+  releaseRegionLabel,
+  releaseSortTimestamp,
+} from "./modules/format.js";
+import { applyTranslations as applyTranslationsBase, loadLanguage, normalizeLanguage, t } from "./modules/i18n.js";
+import {
+  LANGUAGE_STORAGE_KEY,
+  state,
+} from "./modules/state.js";
+import { applyTheme, currentThemeIsDark, toggleTheme } from "./modules/theme.js";
+import {
+  isBrowserBlockedDownloadUrl,
+  isResolvableDownloadUrl,
+  isSafeNetworkUrl,
+  safeWindowOpen,
+} from "./modules/url-safety.js";
 
 const els = {
   apiStatus: document.querySelector("#apiStatus"),
   runtimeStatus: document.querySelector("#runtimeStatus"),
   languageButtons: document.querySelectorAll("[data-language]"),
+  packageButtons: document.querySelectorAll("[data-package]"),
   refreshButton: document.querySelector("#refreshButton"),
+  themeToggle: document.querySelector("#themeToggle"),
   deviceSearch: document.querySelector("#deviceSearch"),
   deviceList: document.querySelector("#deviceList"),
   productModel: document.querySelector("#productModel"),
@@ -264,8 +58,11 @@ const els = {
   releaseSummary: document.querySelector("#releaseSummary"),
   releaseRegion: document.querySelector("#releaseRegion"),
   releaseType: document.querySelector("#releaseType"),
+  releaseTypeFilter: document.querySelector("#releaseTypeFilter"),
+  releaseMetaHeader: document.querySelector("#releaseMetaHeader"),
   releaseSearch: document.querySelector("#releaseSearch"),
   releaseError: document.querySelector("#releaseError"),
+  edlWarning: document.querySelector("#edlWarning"),
   otaError: document.querySelector("#otaError"),
   resultState: document.querySelector("#resultState"),
   resultDetails: document.querySelector("#resultDetails"),
@@ -282,57 +79,74 @@ const els = {
   resolverDetails: document.querySelector("#resolverDetails"),
 };
 
-function normalizeLanguage(language) {
-  return language === "en" ? "en" : "vi";
-}
-
-function t(key, params = {}) {
-  const dictionary = translations[state.language] || translations.vi;
-  const fallback = translations.en[key] || key;
-  const template = dictionary[key] || fallback;
-  return template.replace(/\{([a-zA-Z0-9_]+)\}/g, (_match, name) => params[name] ?? "");
-}
-
 function applyTranslations(root = document) {
-  document.documentElement.lang = state.language;
-  document.title = t("page.title");
-  root.querySelectorAll("[data-i18n]").forEach((element) => {
-    element.textContent = t(element.dataset.i18n);
-  });
-  root.querySelectorAll("[data-i18n-placeholder]").forEach((element) => {
-    element.setAttribute("placeholder", t(element.dataset.i18nPlaceholder));
-  });
-  root.querySelectorAll("[data-i18n-title]").forEach((element) => {
-    element.setAttribute("title", t(element.dataset.i18nTitle));
-  });
-  root.querySelectorAll("[data-i18n-aria-label]").forEach((element) => {
-    element.setAttribute("aria-label", t(element.dataset.i18nAriaLabel));
-  });
+  applyTranslationsBase(root);
   els.languageButtons.forEach((button) => {
     const active = button.dataset.language === state.language;
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", active ? "true" : "false");
   });
+  renderPackageChrome();
 }
 
 function setLanguage(language) {
   state.language = normalizeLanguage(language);
   window.localStorage?.setItem(LANGUAGE_STORAGE_KEY, state.language);
-  applyTranslations();
-  configureFeatures({ public_site: state.publicSite, resolver: state.resolverEnabled, turnstile_site_key: state.turnstileSiteKey });
-  renderDevices(state.devicesTotal);
-  if (state.selectedProductModel || els.productModel.value.trim()) {
-    renderReleaseRegionOptions();
-    renderReleases(state.releasesTotal);
-  } else {
-    loadReleases();
+  // Fire-and-forget: ``loadLanguage`` caches, so re-rendering once
+  // the dictionary lands is cheap. If the user toggles before the
+  // fetch settles, the second toggle will still wait on the first
+  // request via the inflight cache.
+  loadLanguage(state.language).then(() => {
+    applyTranslations();
+    configureFeatures({
+      public_site: state.publicSite,
+      resolver: state.resolverEnabled,
+      turnstile_site_key: state.turnstileSiteKey,
+    });
+    renderDevices(state.devicesTotal);
+    if (state.selectedProductModel || els.productModel.value.trim()) {
+      if (state.packageMode === "edl") {
+        renderEdlRegionOptions();
+        renderEdlRoms(state.edlRomsTotal);
+      } else {
+        renderReleaseRegionOptions();
+        renderReleases(state.releasesTotal);
+      }
+    } else {
+      loadReleases();
+    }
+    if (state.lastResult) {
+      renderResult(state.lastResult);
+    } else {
+      renderDefaultResult();
+    }
+    renderResolverResult();
+  });
+}
+
+function setPackageMode(mode) {
+  state.packageMode = mode === "edl" ? "edl" : "ota";
+  state.releaseRegion = "";
+  state.releaseType = "";
+  els.releaseRegion.value = "";
+  els.releaseType.value = "";
+  renderPackageChrome();
+  loadReleases();
+}
+
+function renderPackageChrome() {
+  if (!els.packageButtons?.length) return;
+  const edlMode = state.packageMode === "edl";
+  els.packageButtons.forEach((button) => {
+    const active = button.dataset.package === state.packageMode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+  if (els.edlWarning) els.edlWarning.hidden = !edlMode;
+  if (els.releaseTypeFilter) els.releaseTypeFilter.hidden = edlMode;
+  if (els.releaseMetaHeader) {
+    els.releaseMetaHeader.textContent = t(edlMode ? "archive.updated" : "archive.type");
   }
-  if (state.lastResult) {
-    renderResult(state.lastResult);
-  } else {
-    renderDefaultResult();
-  }
-  renderResolverResult();
 }
 
 function setBusy(button, busy, label) {
@@ -365,126 +179,6 @@ function clearError(target) {
   target.hidden = true;
 }
 
-async function api(path, options = {}) {
-  const response = await fetch(path, {
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    ...options,
-  });
-  const body = await response.json().catch(() => null);
-  if (!response.ok || body?.ok === false) {
-    const fallback = { code: `HTTP_${response.status}`, message: response.statusText || t("error.requestFailed") };
-    const error = body?.error || fallback;
-    throw Object.assign(new Error(error.message), { apiError: error, status: response.status });
-  }
-  return body;
-}
-
-function clientError(code, message) {
-  return Object.assign(new Error(message), {
-    apiError: { code, message },
-  });
-}
-
-async function activeHeaders(action) {
-  if (!state.publicSite) return {};
-  const token = await requestChallengeToken(action);
-  return { "X-Turnstile-Token": token };
-}
-
-function resetChallenge(action) {
-  state.challengeTokens[action] = "";
-  const widget = state.challengeWidgets[action];
-  if (window.turnstile && widget !== null && widget !== undefined) window.turnstile.reset(widget);
-}
-
-function settleChallenge(action, token, error) {
-  const waiter = state.challengeWaiters[action];
-  state.challengeWaiters[action] = null;
-  window.clearTimeout(waiter?.timer);
-  if (!waiter) return;
-  if (error) {
-    waiter.reject(error);
-    return;
-  }
-  waiter.resolve(token);
-}
-
-function requestChallengeToken(action) {
-  if (!state.publicSite) return Promise.resolve("");
-  if (!window.turnstile) {
-    return Promise.reject(
-      clientError("CHALLENGE_UNAVAILABLE", t("challenge.loading")),
-    );
-  }
-  const widget = state.challengeWidgets[action];
-  if (widget === null || widget === undefined) {
-    return Promise.reject(
-      clientError("CHALLENGE_UNAVAILABLE", t("challenge.notReady")),
-    );
-  }
-  if (state.challengeWaiters[action]) {
-    state.challengeWaiters[action].reject(
-      clientError("CHALLENGE_RESTARTED", t("challenge.restarted")),
-    );
-  }
-  return new Promise((resolve, reject) => {
-    const timer = window.setTimeout(() => {
-      settleChallenge(
-        action,
-        "",
-        clientError("CHALLENGE_TIMEOUT", t("challenge.timeout")),
-      );
-    }, 120000);
-    state.challengeWaiters[action] = { resolve, reject, timer };
-    state.challengeTokens[action] = "";
-    window.turnstile.reset(widget);
-    window.turnstile.execute(widget);
-  });
-}
-
-function mountTurnstile() {
-  if (!state.publicSite || !state.turnstileSiteKey || !window.turnstile) return;
-  const actions = state.resolverEnabled ? ["ota", "resolve"] : ["ota"];
-  actions.forEach((action) => {
-    const elementId = challengeElementIds[action];
-    if (!elementId) return;
-    if (state.challengeWidgets[action] !== null && state.challengeWidgets[action] !== undefined) return;
-    state.challengeWidgets[action] = window.turnstile.render(`#${elementId}`, {
-      sitekey: state.turnstileSiteKey,
-      action,
-      execution: "execute",
-      appearance: "interaction-only",
-      theme: "dark",
-      callback: (token) => {
-        state.challengeTokens[action] = token;
-        settleChallenge(action, token, null);
-      },
-      "expired-callback": () => { state.challengeTokens[action] = ""; },
-      "error-callback": () => {
-        settleChallenge(
-          action,
-          "",
-          clientError("CHALLENGE_FAILED", t("challenge.failed")),
-        );
-      },
-      "timeout-callback": () => {
-        settleChallenge(
-          action,
-          "",
-          clientError("CHALLENGE_TIMEOUT", t("challenge.timeout")),
-        );
-      },
-      "unsupported-callback": () => {
-        settleChallenge(
-          action,
-          "",
-          clientError("CHALLENGE_UNSUPPORTED", t("challenge.unsupported")),
-        );
-      },
-    });
-  });
-}
-
 function configureChallengePanel(panel, enabled) {
   panel.hidden = !enabled;
   panel.classList.toggle("silent-challenge-panel", enabled);
@@ -495,7 +189,10 @@ function configureFeatures(features) {
   state.publicSite = Boolean(features?.public_site);
   state.resolverEnabled = Boolean(features?.resolver);
   state.turnstileSiteKey = features?.turnstile_site_key || "";
-  els.runtimeStatus.textContent = state.publicSite ? t("runtime.publicProtected") : t("runtime.localOperator");
+  const runtimeLabel = state.publicSite
+    ? t("runtime.publicProtected")
+    : t("runtime.localOperator");
+  els.runtimeStatus.innerHTML = `<span></span>${escapeHtml(runtimeLabel)}`;
   els.resolverPanel.hidden = !state.resolverEnabled;
   configureChallengePanel(els.otaChallengePanel, state.publicSite);
   configureChallengePanel(els.resolverChallengePanel, state.publicSite && state.resolverEnabled);
@@ -507,116 +204,6 @@ function configureFeatures(features) {
   script.async = true;
   script.defer = true;
   document.head.appendChild(script);
-}
-
-function brandLabel(brand) {
-  const lower = String(brand || "").toLowerCase().trim();
-  if (lower === "oppo") return `<span class="brand-badge oppo">OPPO</span>`;
-  if (lower === "realme") return `<span class="brand-badge realme">Realme</span>`;
-  if (lower === "oneplus") return `<span class="brand-badge oneplus">OnePlus</span>`;
-  return brand || "-";
-}
-
-function releaseRegionLabel(release) {
-  const manifestLabels = {
-    "00": "EX",
-    A4: "APC",
-    A5: "OCA",
-    A6: "MEA",
-    A7: "ROW",
-    "1A": "TW",
-    "1B": "IN",
-    "1E": "AU",
-    "2C": "SG",
-    "33": "ID",
-    "37": "RU",
-    "38": "MY",
-    "39": "TH",
-    "3B": "JP",
-    "3C": "VN",
-    "3E": "PH",
-    "44": "EUEX",
-    "51": "TR",
-    "75": "EG",
-    "7B": "MX",
-    "82": "HK",
-    "83": "SA",
-    "8D": "EU-NO",
-    "97": "CN",
-    "9A": "LATAM",
-    "9E": "BR",
-  };
-  const manifestCode = release.manifest_code || "";
-  const manifestLabel = manifestLabels[manifestCode] || manifestCode || "";
-  const regionCode = release.region_code || "";
-  if (!manifestCode) return regionCode || "-";
-  if (!regionCode || regionCode === manifestLabel) return `${manifestLabel} / ${manifestCode}`;
-  return `${manifestLabel} (${regionCode}) / ${manifestCode}`;
-}
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-function formatDate(value) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
-}
-
-function releaseSortTimestamp(release) {
-  const direct = Date.parse(release.published_at || "");
-  if (!Number.isNaN(direct)) return direct;
-  const aboutMatch = String(release.about_update_url || "").match(/\/(?:component-ota|ota)\/(\d{2})\/(\d{2})\/(\d{2})\//);
-  if (aboutMatch) {
-    const parsed = Date.UTC(2000 + Number(aboutMatch[1]), Number(aboutMatch[2]) - 1, Number(aboutMatch[3]));
-    if (!Number.isNaN(parsed)) return parsed;
-  }
-  const otaMatch = String(release.real_ota_version || "").match(/_(\d{12})$/);
-  if (otaMatch) {
-    const raw = otaMatch[1];
-    const parsed = Date.UTC(
-      Number(raw.slice(0, 4)),
-      Number(raw.slice(4, 6)) - 1,
-      Number(raw.slice(6, 8)),
-      Number(raw.slice(8, 10)),
-      Number(raw.slice(10, 12)),
-    );
-    if (!Number.isNaN(parsed)) return parsed;
-  }
-  const discovered = Date.parse(release.discovered_at || "");
-  return Number.isNaN(discovered) ? 0 : discovered;
-}
-
-function releasePublishedLabel(release) {
-  if (release.published_at) return formatDate(release.published_at);
-  const timestamp = releaseSortTimestamp(release);
-  return timestamp ? formatDate(new Date(timestamp).toISOString()) : "-";
-}
-
-function isResolvableDownloadUrl(value) {
-  const lower = String(value || "").toLowerCase();
-  return (
-    lower.includes("downloadcheck")
-    || lower.includes("servlet/download")
-    || lower.includes("componentotacostmanual")
-    || lower.includes("compotacostauto")
-  );
-}
-
-function isBrowserBlockedDownloadUrl(value) {
-  const lower = String(value || "").toLowerCase();
-  return (
-    lower.includes("gauss-componentotacostmanual-cn.")
-    || lower.includes("gauss-compotacostauto-cn.")
-    || lower.includes("gauss-opexcostmanual-cn.")
-  );
 }
 
 function renderReleaseActions(release) {
@@ -647,6 +234,79 @@ function renderReleaseActions(release) {
   `;
 }
 
+function renderEdlActions(rom) {
+  return `
+    <button class="row-action" type="button" data-copy-edl="${rom.id}" title="${escapeHtml(t("edl.copyTitle"))}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
+        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+      </svg>
+      <span>${escapeHtml(t("actions.copy"))}</span>
+    </button>
+    <button class="row-action" type="button" data-open-edl="${rom.id}" title="${escapeHtml(t("edl.openTitle"))}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
+        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/>
+      </svg>
+      <span>${escapeHtml(t("actions.open"))}</span>
+    </button>
+  `;
+}
+
+function releaseGroupKey(release) {
+  return [
+    release.product_model || "",
+    release.manifest_code || "",
+    release.region_code || "",
+    release.release_type || "official",
+    release.real_ota_version || release.real_version_name || "",
+  ].join("::");
+}
+
+function buildReleaseGroups(releases) {
+  const groupsByKey = new Map();
+  releases.forEach((release) => {
+    const key = releaseGroupKey(release);
+    const variants = groupsByKey.get(key) || [];
+    variants.push(release);
+    groupsByKey.set(key, variants);
+  });
+  return Array.from(groupsByKey.values())
+    .map((variants) => {
+      const sorted = [...variants].sort(
+        (left, right) => releaseSortTimestamp(right) - releaseSortTimestamp(left),
+      );
+      return { primary: sorted[0], variants: sorted };
+    })
+    .sort((left, right) => releaseSortTimestamp(right.primary) - releaseSortTimestamp(left.primary));
+}
+
+function renderReleaseVariantLinks(group) {
+  if (group.variants.length <= 1) return "";
+  const links = group.variants.length;
+  const events = new Set(group.variants.map((release) => releasePublishedLabel(release))).size;
+  const badge = t("release.duplicateBadge", { links, events });
+  return `
+    <details class="release-variants">
+      <summary>
+        <span>${escapeHtml(t("release.showVariants"))}</span>
+        <span class="release-variant-badge">${escapeHtml(badge)}</span>
+      </summary>
+      <div class="release-variant-list">
+        ${group.variants.map((release, index) => `
+          <div class="release-variant-row">
+            <div class="release-variant-meta">
+              <strong>${escapeHtml(index === 0 ? t("release.primaryLink") : t("release.alternateLink"))}</strong>
+              <span>${releasePublishedLabel(release)} · ${escapeHtml(t(`release.type.${release.release_type || "official"}`))}</span>
+            </div>
+            <div class="release-variant-actions">
+              ${renderReleaseActions(release)}
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    </details>
+  `;
+}
+
 function parseRuiCandidates(value) {
   const candidates = value
     .split(",")
@@ -667,7 +327,7 @@ async function loadHealth() {
     els.apiStatus.className = "status-pill ok";
     els.apiStatus.innerHTML = `<span></span>${body.service} ${body.version}`;
     configureFeatures(body.features);
-  } catch (error) {
+  } catch (_error) {
     els.apiStatus.className = "status-pill error";
     els.apiStatus.innerHTML = `<span></span>${escapeHtml(t("status.apiUnavailable"))}`;
   }
@@ -706,7 +366,10 @@ function renderDevices(total) {
     )
     .join("");
   if (total > state.devices.length) {
-    els.deviceList.insertAdjacentHTML("beforeend", `<div class="empty-state">${escapeHtml(t("device.matchesShown", { shown: state.devices.length, total }))}</div>`);
+    els.deviceList.insertAdjacentHTML(
+      "beforeend",
+      `<div class="empty-state">${escapeHtml(t("device.matchesShown", { shown: state.devices.length, total }))}</div>`,
+    );
   }
 }
 
@@ -733,10 +396,13 @@ function selectDevice(productModel) {
 async function loadReleases() {
   clearError(els.releaseError);
   const selectedModel = state.selectedProductModel || els.productModel.value.trim().toUpperCase();
-  
+  renderPackageChrome();
+
   if (!selectedModel) {
-    els.releaseTitle.textContent = t("archive.title");
-    els.releaseSummary.textContent = t("archive.noDeviceSelected");
+    els.releaseTitle.textContent = t(state.packageMode === "edl" ? "edl.title" : "archive.title");
+    els.releaseSummary.textContent = t(
+      state.packageMode === "edl" ? "edl.selectDevice" : "archive.noDeviceSelected",
+    );
     els.releaseRows.innerHTML = `
       <tr>
         <td colspan="5" class="empty-cell">
@@ -746,11 +412,16 @@ async function loadReleases() {
               <path d="M12 17h.01M12 12h.01M12 7h.01"/>
             </svg>
             <strong>${escapeHtml(t("archive.welcomeTitle"))}</strong>
-            <span>${escapeHtml(t("archive.welcomeText"))}</span>
+            <span>${escapeHtml(t(state.packageMode === "edl" ? "edl.selectDevice" : "archive.welcomeText"))}</span>
           </div>
         </td>
       </tr>
     `;
+    return;
+  }
+
+  if (state.packageMode === "edl") {
+    await loadEdlRoms(selectedModel);
     return;
   }
 
@@ -782,9 +453,49 @@ async function loadReleases() {
   }
 }
 
+async function loadEdlRoms(selectedModel) {
+  els.releaseTitle.textContent = t("edl.title");
+  els.releaseSummary.textContent = t("archive.loading");
+  els.releaseRows.innerHTML = `<tr><td colspan="5" class="empty-cell">${escapeHtml(t("archive.loading"))}</td></tr>`;
+
+  const params = new URLSearchParams({
+    limit: "200",
+    sort: "build",
+    product_model: selectedModel,
+  });
+  if (state.releaseRegion) params.set("region_code", state.releaseRegion);
+  if (state.releaseSearch) params.set("q", state.releaseSearch);
+
+  try {
+    const body = await api(`/api/edl-roms?${params.toString()}`);
+    state.edlRoms = (body.roms || []).sort(
+      (left, right) => edlSortTimestamp(right) - edlSortTimestamp(left),
+    );
+    state.edlRomsTotal = body.total || 0;
+    renderEdlRegionOptions();
+    renderEdlRoms(state.edlRomsTotal);
+  } catch (error) {
+    els.releaseRows.innerHTML = `<tr><td colspan="5" class="empty-cell">${escapeHtml(t("archive.couldNotLoad"))}</td></tr>`;
+    els.releaseSummary.textContent = t("archive.loadFailed");
+    displayError(els.releaseError, error.apiError);
+  }
+}
+
 function renderReleaseRegionOptions() {
   const selected = state.releaseRegion;
-  const regions = Array.from(new Set(state.releases.map((release) => release.region_code).filter(Boolean))).sort();
+  const regions = Array.from(
+    new Set(state.releases.map((release) => release.region_code).filter(Boolean)),
+  ).sort();
+  els.releaseRegion.innerHTML = [`<option value="">${escapeHtml(t("archive.all"))}</option>`]
+    .concat(regions.map((region) => `<option value="${escapeHtml(region)}">${escapeHtml(region)}</option>`))
+    .join("");
+  els.releaseRegion.value = regions.includes(selected) ? selected : "";
+  state.releaseRegion = els.releaseRegion.value;
+}
+
+function renderEdlRegionOptions() {
+  const selected = state.releaseRegion;
+  const regions = Array.from(new Set(state.edlRoms.map((rom) => rom.region_code).filter(Boolean))).sort();
   els.releaseRegion.innerHTML = [`<option value="">${escapeHtml(t("archive.all"))}</option>`]
     .concat(regions.map((region) => `<option value="${escapeHtml(region)}">${escapeHtml(region)}</option>`))
     .join("");
@@ -795,28 +506,66 @@ function renderReleaseRegionOptions() {
 function renderReleases(total) {
   const selectedModel = state.selectedProductModel || els.productModel.value.trim().toUpperCase();
   const suffix = selectedModel ? t("archive.forModel", { model: selectedModel }) : "";
+  const releaseGroups = buildReleaseGroups(state.releases);
   els.releaseSummary.textContent = total
-    ? t(total === 1 ? "archive.summaryOne" : "archive.summary", { count: total, suffix })
+    ? (releaseGroups.length < state.releases.length
+      ? t("archive.summaryGrouped", { groupCount: releaseGroups.length, rawCount: total, suffix })
+      : t(total === 1 ? "archive.summaryOne" : "archive.summary", { count: total, suffix }))
     : t("archive.summaryNone", { suffix });
-  if (!state.releases.length) {
+  if (!releaseGroups.length) {
     els.releaseRows.innerHTML = `<tr><td colspan="5" class="empty-cell">${escapeHtml(t("archive.noReleases"))}</td></tr>`;
     return;
   }
 
-  els.releaseRows.innerHTML = state.releases
+  els.releaseRows.innerHTML = releaseGroups
     .map(
-      (release) => `
+      (group) => {
+        const release = group.primary;
+        return `
         <tr>
           <td data-label="${escapeHtml(t("archive.release"))}">
             <strong class="version-cell">${escapeHtml(release.real_version_name)}</strong>
             <div class="release-subline">${escapeHtml(release.product_model)} / ${brandLabel(release.brand)} / ${escapeHtml(release.ota_track || "-")}</div>
             <div class="release-subline version-cell">${escapeHtml(release.real_ota_version || "-")}</div>
+            ${renderReleaseVariantLinks(group)}
           </td>
           <td data-label="${escapeHtml(t("archive.region"))}"><span class="release-badge">${escapeHtml(releaseRegionLabel(release))}</span></td>
           <td data-label="${escapeHtml(t("archive.type"))}"><span class="release-badge ${release.release_type === "beta" ? "beta" : "official"}">${escapeHtml(t(`release.type.${release.release_type || "official"}`))}</span></td>
           <td data-label="${escapeHtml(t("archive.published"))}">${releasePublishedLabel(release)}</td>
           <td class="release-actions" data-label="${escapeHtml(t("archive.actions"))}">
             ${renderReleaseActions(release)}
+          </td>
+        </tr>
+      `;
+      },
+    )
+    .join("");
+}
+
+function renderEdlRoms(total) {
+  const selectedModel = state.selectedProductModel || els.productModel.value.trim().toUpperCase();
+  const suffix = selectedModel ? t("archive.forModel", { model: selectedModel }) : "";
+  els.releaseSummary.textContent = total
+    ? t(total === 1 ? "edl.summaryOne" : "edl.summary", { count: total, suffix })
+    : t("edl.summaryNone", { suffix });
+  if (!state.edlRoms.length) {
+    els.releaseRows.innerHTML = `<tr><td colspan="5" class="empty-cell">${escapeHtml(t("edl.noRoms"))}</td></tr>`;
+    return;
+  }
+
+  els.releaseRows.innerHTML = state.edlRoms
+    .map(
+      (rom) => `
+        <tr>
+          <td data-label="${escapeHtml(t("archive.release"))}">
+            <strong class="version-cell">${escapeHtml(rom.version_name)}</strong>
+            <div class="release-subline">${escapeHtml(rom.product_model)} / ${brandLabel(rom.brand)}${rom.device_name ? ` / ${escapeHtml(rom.device_name)}` : ""}</div>
+          </td>
+          <td data-label="${escapeHtml(t("archive.region"))}"><span class="release-badge">${escapeHtml(rom.region_code || "-")}</span></td>
+          <td data-label="${escapeHtml(t("archive.updated"))}">${rom.source_updated_at ? formatDate(rom.source_updated_at) : "-"}</td>
+          <td data-label="${escapeHtml(t("archive.published"))}">${edlDateLabel(rom)}</td>
+          <td class="release-actions" data-label="${escapeHtml(t("archive.actions"))}">
+            ${renderEdlActions(rom)}
           </td>
         </tr>
       `,
@@ -858,7 +607,8 @@ function renderResult(result) {
     .map(([key, value]) => `<dt>${escapeHtml(key)}</dt><dd>${value}</dd>`)
     .join("");
   els.copyResultButton.disabled = !state.selectedDownloadUrl;
-  els.openResultButton.disabled = !state.selectedDownloadUrl || isBrowserBlockedDownloadUrl(state.selectedDownloadUrl);
+  els.openResultButton.disabled =
+    !state.selectedDownloadUrl || isBrowserBlockedDownloadUrl(state.selectedDownloadUrl);
 }
 
 function renderResolverResult() {
@@ -886,7 +636,11 @@ async function submitOta(event) {
     };
     const body = await api("/api/ota", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json", ...(await activeHeaders("ota")) },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...(await activeHeaders("ota")),
+      },
       body: JSON.stringify(payload),
     });
     renderResult(body.result);
@@ -910,7 +664,11 @@ async function submitResolver(event) {
   try {
     const body = await api("/api/resolve", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json", ...(await activeHeaders("resolve")) },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...(await activeHeaders("resolve")),
+      },
       body: JSON.stringify({ url: els.resolverUrl.value.trim(), source: "web" }),
     });
     state.resolverResolvedUrl = body.resolved_url || "";
@@ -926,6 +684,12 @@ async function submitResolver(event) {
 
 async function copyText(text) {
   if (!text) return;
+  if (!isSafeNetworkUrl(text)) {
+    // Refuse to copy non-network URLs so a poisoned download_url cannot end
+    // up on the clipboard and later be pasted into a browser bar. No toast
+    // since this is an unexpected/edge case, not a user-driven outcome.
+    return;
+  }
   try {
     await navigator.clipboard.writeText(text);
   } catch (_error) {
@@ -939,6 +703,8 @@ async function copyText(text) {
   showToast(t("toast.downloadCopied"));
 }
 
+// --- DOM wiring -------------------------------------------------------
+
 document.querySelectorAll(".segment").forEach((button) => {
   button.addEventListener("click", () => {
     document.querySelectorAll(".segment").forEach((item) => item.classList.remove("active"));
@@ -950,6 +716,10 @@ document.querySelectorAll(".segment").forEach((button) => {
 
 els.languageButtons.forEach((button) => {
   button.addEventListener("click", () => setLanguage(button.dataset.language));
+});
+
+els.packageButtons.forEach((button) => {
+  button.addEventListener("click", () => setPackageMode(button.dataset.package));
 });
 
 els.deviceSearch.addEventListener("input", () => {
@@ -981,14 +751,29 @@ els.releaseSearch.addEventListener("input", () => {
 els.form.addEventListener("submit", submitOta);
 els.resolverForm.addEventListener("submit", submitResolver);
 els.refreshButton.addEventListener("click", loadReleases);
+els.themeToggle?.addEventListener("click", () => toggleTheme(els.themeToggle));
 els.copyResultButton.addEventListener("click", () => copyText(state.selectedDownloadUrl));
 els.openResultButton.addEventListener("click", () => {
   if (state.selectedDownloadUrl && !isBrowserBlockedDownloadUrl(state.selectedDownloadUrl)) {
-    window.open(state.selectedDownloadUrl, "_blank", "noopener,noreferrer");
+    safeWindowOpen(state.selectedDownloadUrl);
   }
 });
 
 els.releaseRows.addEventListener("click", (event) => {
+  const copyEdlButton = event.target.closest("[data-copy-edl]");
+  if (copyEdlButton) {
+    const rom = state.edlRoms.find((item) => item.id === copyEdlButton.dataset.copyEdl);
+    copyText(rom?.download_url || "");
+    return;
+  }
+  const openEdlButton = event.target.closest("[data-open-edl]");
+  if (openEdlButton) {
+    const rom = state.edlRoms.find((item) => item.id === openEdlButton.dataset.openEdl);
+    if (rom?.download_url) {
+      safeWindowOpen(rom.download_url);
+    }
+    return;
+  }
   const copyButton = event.target.closest("[data-copy-release]");
   if (copyButton) {
     const release = state.releases.find((item) => item.id === copyButton.dataset.copyRelease);
@@ -999,7 +784,7 @@ els.releaseRows.addEventListener("click", (event) => {
   if (openButton) {
     const release = state.releases.find((item) => item.id === openButton.dataset.openRelease);
     if (release?.download_url && !isBrowserBlockedDownloadUrl(release.download_url)) {
-      window.open(release.download_url, "_blank", "noopener,noreferrer");
+      safeWindowOpen(release.download_url);
     }
     return;
   }
@@ -1013,8 +798,21 @@ els.releaseRows.addEventListener("click", (event) => {
 });
 
 state.language = normalizeLanguage(window.localStorage?.getItem(LANGUAGE_STORAGE_KEY));
+applyTheme(currentThemeIsDark(), els.themeToggle);
+// Top-level await: the first paint deserves real translations, not
+// raw keys. ``loadLanguage`` also pre-warms English so the t()
+// fallback chain works for any keys missing from the active language.
+await Promise.all([loadLanguage(state.language), loadLanguage("en")]);
 applyTranslations();
 renderDefaultResult();
 loadHealth();
 loadDevices();
 loadReleases();
+
+// Surface a few helpers under window for debugging in DevTools. The
+// internal modules are the source of truth — these are read-only mirrors.
+window.__app = {
+  state,
+  requestChallengeToken,
+  isSafeNetworkUrl,
+};

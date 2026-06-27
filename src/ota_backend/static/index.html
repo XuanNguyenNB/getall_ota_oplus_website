@@ -5,70 +5,91 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>OPlus OTA Monitor</title>
     <link class="favicon" rel="icon" href="data:," />
-    <!-- Modern Tech Fonts -->
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      // Apply the saved theme before first paint to avoid a flash.
+      (function () {
+        try {
+          var stored = window.localStorage.getItem("oplus_ota_theme");
+          var dark = stored
+            ? stored === "dark"
+            : window.matchMedia("(prefers-color-scheme: dark)").matches;
+          if (dark) document.documentElement.classList.add("dark");
+        } catch (_e) {}
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/styles.css?v=ui-review-polish" />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css?v=tailwind-redesign" />
   </head>
   <body>
-    <!-- Premium background glowing elements -->
-    <div class="glowing-bg-elements" aria-hidden="true">
-      <div class="glow-circle glow-circle-1"></div>
-      <div class="glow-circle glow-circle-2"></div>
-      <div class="glow-circle glow-circle-3"></div>
-    </div>
-
     <div class="app-shell">
       <header class="topbar">
-        <div class="brand-block">
+        <a class="brand-block" href="/" aria-label="OPlus OTA Monitor">
           <div class="brand-mark" aria-hidden="true">
-            <!-- Modern Tech SVG Logo -->
             <svg class="brand-logo-svg" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M12 2 3 6.5 12 11l9-4.5L12 2Z" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M3 12 12 16.5 21 12" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M3 17.5 12 22l9-4.5" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </div>
-          <div>
+          <div class="brand-copy">
             <h1 data-i18n="page.title">OPlus OTA Monitor</h1>
-            <div class="subtitle" data-i18n="page.subtitle">Kho OTA công khai và tra cứu bản cập nhật chuẩn cho OPPO, Realme và OnePlus</div>
+            <div class="subtitle" data-i18n="page.subtitle">Tìm OTA, EDL ROM và link tải cho OPPO, Realme, OnePlus</div>
+            <div class="brand-meta status-strip" aria-label="Trạng thái dịch vụ" data-i18n-aria-label="status.ariaLabel">
+              <span class="status-pill" id="apiStatus"><span></span><span data-i18n="status.checkingApi">Đang kiểm tra API</span></span>
+              <span class="status-pill" id="runtimeStatus"><span></span><span data-i18n="runtime.localOperator">Môi trường vận hành nội bộ</span></span>
+            </div>
           </div>
-        </div>
-        <div class="status-strip" aria-label="Trạng thái dịch vụ" data-i18n-aria-label="status.ariaLabel">
-          <span class="status-pill" id="apiStatus"><span></span><span data-i18n="status.checkingApi">Đang kiểm tra API</span></span>
-          <span class="status-pill muted" id="runtimeStatus" data-i18n="runtime.localOperator">Môi trường vận hành nội bộ</span>
-        </div>
+        </a>
         <div class="top-actions">
           <div class="language-switch" role="group" aria-label="Ngôn ngữ" data-i18n-aria-label="language.ariaLabel">
             <button class="language-button active" type="button" data-language="vi" aria-pressed="true">VI</button>
             <button class="language-button" type="button" data-language="en" aria-pressed="false">EN</button>
           </div>
+          <button class="theme-toggle" type="button" id="themeToggle" title="Đổi giao diện" aria-label="Đổi giao diện sáng tối" data-i18n-title="actions.theme" data-i18n-aria-label="actions.theme">
+            <svg class="btn-icon icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+            </svg>
+            <svg class="btn-icon icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/>
+            </svg>
+          </button>
           <a class="icon-button support-button" href="https://t.me/oplusota" target="_blank" rel="noopener noreferrer" data-i18n-title="actions.support" data-i18n-aria-label="actions.support" title="Support" aria-label="Support">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
               <path d="M21.5 3.5 2.5 11l7 2.5 2.5 7 9.5-17Z"/>
               <path d="m9.5 13.5 4.5-4"/>
             </svg>
             <span data-i18n="actions.support">Support</span>
           </a>
-          <button class="icon-button" type="button" id="refreshButton" title="Làm mới danh sách" aria-label="Làm mới danh sách" data-i18n-title="actions.refresh" data-i18n-aria-label="actions.refresh">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
-              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+          <button class="icon-button" type="button" id="refreshButton" title="Làm mới" aria-label="Làm mới" data-i18n-title="actions.refresh" data-i18n-aria-label="actions.refresh">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
+              <path d="M21 2v6h-6M21 12a9 9 0 1 1-2.64-6.36L21 8"/>
             </svg>
             <span data-i18n="actions.refresh">Làm mới</span>
           </button>
         </div>
       </header>
 
-      <!-- Unified 2-Column Dashboard Box -->
-      <main class="dashboard-cabinet">
-        
-        <!-- LEFT COLUMN: Control Deck (Sidebar Controls) -->
-        <aside class="control-deck">
-          <div class="section-head">
-            <h2 data-i18n="control.title">Bảng điều khiển</h2>
-            <span class="micro-chip" data-i18n="control.protected">Được bảo vệ</span>
+      <main class="search-first-layout">
+        <section class="finder-panel" aria-labelledby="finderTitle">
+          <div class="panel-heading">
+            <div>
+              <h2 id="finderTitle" data-i18n="finder.title">Thiết bị</h2>
+              <p data-i18n="finder.subtitle">Nhập tên máy hoặc mã model, sau đó chọn đúng khu vực.</p>
+            </div>
           </div>
+
+          <label class="field search-field">
+            <span class="sr-only" data-i18n="field.searchDevices">Tìm thiết bị</span>
+            <div class="search-input-wrapper">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="input-icon">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input id="deviceSearch" type="search" autocomplete="off" placeholder="Ví dụ: Find X8, PKB110, RMX3800" data-i18n-placeholder="placeholder.deviceSearch" />
+            </div>
+          </label>
 
           <div class="segmented" role="group" aria-label="Lọc thương hiệu" data-i18n-aria-label="brand.ariaLabel">
             <button class="segment active" type="button" data-brand="" data-i18n="brand.all">Tất cả</button>
@@ -77,83 +98,195 @@
             <button class="segment" type="button" data-brand="oneplus">OnePlus</button>
           </div>
 
-          <label class="field">
-            <span data-i18n="field.searchDevices">Tìm thiết bị</span>
-            <div class="search-input-wrapper">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="input-icon">
-                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-              </svg>
-              <input id="deviceSearch" type="search" autocomplete="off" placeholder="Tên máy hoặc mã model" data-i18n-placeholder="placeholder.deviceSearch" />
-            </div>
-          </label>
           <div class="device-list" id="deviceList" aria-live="polite"></div>
 
-          <form id="otaForm" novalidate>
-            <label class="field">
-              <span data-i18n="field.productModel">Mã model</span>
-              <input id="productModel" name="product_model" type="text" autocomplete="off" placeholder="RMX3301" required />
-            </label>
-
-            <div class="two-col">
+          <details class="advanced-panel" id="advancedOtaPanel">
+            <summary>
+              <span data-i18n="advanced.title">Tra cứu OTA nâng cao</span>
+              <small data-i18n="advanced.subtitle">Dùng khi archive chưa có bản bạn cần</small>
+            </summary>
+            <form id="otaForm" novalidate>
               <label class="field">
-                <span data-i18n="field.manifest">Manifest</span>
-                <select id="manifestCode" name="manifest_code" required>
-                  <option value="" selected disabled data-i18n="field.selectManifest">Chọn manifest</option>
-                  <option value="00">EX / 00</option>
-                  <option value="A4">APC / A4</option>
-                  <option value="A5">OCA / A5</option>
-                  <option value="A6">MEA / A6</option>
-                  <option value="A7">ROW / A7</option>
-                  <option value="1A">TW / 1A</option>
-                  <option value="1B">IN / 1B</option>
-                  <option value="1E">AU / 1E</option>
-                  <option value="2C">SG / 2C</option>
-                  <option value="33">ID / 33</option>
-                  <option value="37">RU / 37</option>
-                  <option value="38">MY / 38</option>
-                  <option value="39">TH / 39</option>
-                  <option value="3B">JP / 3B</option>
-                  <option value="3C">VN / 3C</option>
-                  <option value="3E">PH / 3E</option>
-                  <option value="44">EUEX / 44</option>
-                  <option value="51">TR / 51</option>
-                  <option value="75">EG / 75</option>
-                  <option value="7B">MX / 7B</option>
-                  <option value="82">HK / 82</option>
-                  <option value="83">SA / 83</option>
-                  <option value="8D">EU-NO / 8D</option>
-                  <option value="97">CN / 97</option>
-                  <option value="9A">LATAM / 9A</option>
-                  <option value="9E">BR / 9E</option>
-                </select>
+                <span data-i18n="field.productModel">Mã model</span>
+                <input id="productModel" name="product_model" type="text" autocomplete="off" placeholder="RMX3301" required />
               </label>
 
+              <div class="two-col">
+                <label class="field">
+                  <span data-i18n="field.manifest">Manifest</span>
+                  <select id="manifestCode" name="manifest_code" required>
+                    <option value="" selected disabled data-i18n="field.selectManifest">Chọn manifest</option>
+                    <option value="00">EX / 00</option>
+                    <option value="A4">APC / A4</option>
+                    <option value="A5">OCA / A5</option>
+                    <option value="A6">MEA / A6</option>
+                    <option value="A7">ROW / A7</option>
+                    <option value="1A">TW / 1A</option>
+                    <option value="1B">IN / 1B</option>
+                    <option value="1E">AU / 1E</option>
+                    <option value="2C">SG / 2C</option>
+                    <option value="33">ID / 33</option>
+                    <option value="37">RU / 37</option>
+                    <option value="38">MY / 38</option>
+                    <option value="39">TH / 39</option>
+                    <option value="3B">JP / 3B</option>
+                    <option value="3C">VN / 3C</option>
+                    <option value="3E">PH / 3E</option>
+                    <option value="44">EUEX / 44</option>
+                    <option value="51">TR / 51</option>
+                    <option value="75">EG / 75</option>
+                    <option value="7B">MX / 7B</option>
+                    <option value="82">HK / 82</option>
+                    <option value="83">SA / 83</option>
+                    <option value="8D">EU-NO / 8D</option>
+                    <option value="97">CN / 97</option>
+                    <option value="9A">LATAM / 9A</option>
+                    <option value="9E">BR / 9E</option>
+                  </select>
+                </label>
+
+                <label class="field">
+                  <span data-i18n="field.track">Track</span>
+                  <select id="otaTrack" name="ota_track" required>
+                    <option>A</option>
+                    <option>C</option>
+                    <option>F</option>
+                    <option selected>H</option>
+                  </select>
+                </label>
+              </div>
+
               <label class="field">
-                <span data-i18n="field.track">Track</span>
-                <select id="otaTrack" name="ota_track" required>
-                  <option>A</option>
-                  <option>C</option>
-                  <option>F</option>
-                  <option selected>H</option>
-                </select>
+                <span data-i18n="field.ruiCandidates">RUI candidates</span>
+                <input id="ruiCandidates" name="rui_candidates" type="text" value="8,7,6" inputmode="numeric" />
               </label>
-            </div>
 
-            <label class="field">
-              <span data-i18n="field.ruiCandidates">RUI candidates</span>
-              <input id="ruiCandidates" name="rui_candidates" type="text" value="8,7,6" inputmode="numeric" />
+              <button class="primary-button" type="submit" id="findButton">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
+                  <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                </svg>
+                <span data-i18n="actions.findOta">Tìm OTA</span>
+              </button>
+              <div class="challenge-panel" id="otaChallengePanel" hidden>
+                <div id="otaChallenge"></div>
+              </div>
+            </form>
+          </details>
+        </section>
+
+        <section class="archive-panel" aria-labelledby="releaseTitle">
+          <div class="panel-heading archive-heading">
+            <div>
+              <h2 id="releaseTitle" data-i18n="archive.title">Kho OTA của thiết bị</h2>
+              <p class="subtitle" id="releaseSummary" data-i18n="archive.selectDevice">Chọn thiết bị để xem các bản cập nhật</p>
+            </div>
+            <div class="package-switch" role="group" aria-label="Package type">
+              <button class="package-tab active" type="button" data-package="ota" data-i18n="package.ota">OTA</button>
+              <button class="package-tab" type="button" data-package="edl" data-i18n="package.edl">EDL ROM</button>
+            </div>
+          </div>
+
+          <div class="notice" id="edlWarning" hidden data-i18n="edl.warning">EDL ROM có thể xoá dữ liệu hoặc làm brick thiết bị nếu dùng sai model/khu vực. Hãy kiểm tra kỹ trước khi tải và flash.</div>
+
+          <div class="release-filters" aria-label="Bộ lọc bản cập nhật" data-i18n-aria-label="archive.filtersAria">
+            <label class="field compact">
+              <span data-i18n="archive.region">Khu vực</span>
+              <select id="releaseRegion">
+                <option value="" data-i18n="archive.all">Tất cả</option>
+              </select>
             </label>
+            <label class="field compact" id="releaseTypeFilter">
+              <span data-i18n="archive.type">Loại</span>
+              <select id="releaseType">
+                <option value="" data-i18n="archive.all">Tất cả</option>
+                <option value="official" data-i18n="archive.official">Chính thức</option>
+                <option value="beta" data-i18n="archive.beta">Beta</option>
+              </select>
+            </label>
+            <label class="field compact wide">
+              <span data-i18n="archive.version">Phiên bản</span>
+              <div class="search-input-wrapper">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="input-icon">
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input id="releaseSearch" type="search" autocomplete="off" placeholder="Lọc phiên bản" data-i18n-placeholder="placeholder.releaseSearch" />
+              </div>
+            </label>
+          </div>
 
-            <button class="primary-button" type="submit" id="findButton">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
-                <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
-              </svg>
-              <span data-i18n="actions.findOta">Tìm OTA</span>
-            </button>
-            <div class="challenge-panel" id="otaChallengePanel" hidden>
-              <div id="otaChallenge"></div>
+          <div class="alert" id="releaseError" hidden></div>
+          <div class="release-table-wrap">
+            <table class="release-table">
+              <thead>
+                <tr>
+                  <th data-i18n="archive.release">Bản cập nhật</th>
+                  <th data-i18n="archive.region">Khu vực</th>
+                  <th id="releaseMetaHeader" data-i18n="archive.type">Loại</th>
+                  <th data-i18n="archive.published">Ngày phát hành</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="releaseRows"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="secondary-grid" aria-label="Công cụ nâng cao">
+          <details class="result-panel" id="otaResultPanel">
+            <summary>
+              <span data-i18n="result.title">Kết quả OTA live</span>
+              <span class="micro-chip" id="resultState">chờ</span>
+            </summary>
+            <div class="alert" id="otaError" hidden></div>
+            <dl class="details-list" id="resultDetails">
+              <dt data-i18n="result.status">Trạng thái</dt>
+              <dd data-i18n="result.defaultStatus">Chọn thiết bị rồi mở tra cứu nâng cao nếu cần gọi OTA live.</dd>
+            </dl>
+            <div class="button-row">
+              <button class="primary-button small" type="button" id="copyResultButton" disabled>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+                <span data-i18n="actions.copyUrl">Sao chép URL</span>
+              </button>
+              <button class="secondary-button small" type="button" id="openResultButton" disabled>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/>
+                </svg>
+                <span data-i18n="actions.open">Mở</span>
+              </button>
             </div>
-          </form>
+          </details>
+
+          <details class="result-panel resolver-card" id="resolverPanel" hidden>
+            <summary>
+              <span class="heading-with-info">
+                <span data-i18n="resolver.title">Resolve link bảo vệ</span>
+                <span class="info-popover">
+                  <span class="info-trigger" role="img" aria-label="Resolve link info" data-i18n-aria-label="resolver.infoLabel">i</span>
+                  <span class="info-content" data-i18n="resolver.infoText">Resolver kiểm tra link OTA dạng downloadCheck/component protected và trả final URL tải trực tiếp khi OPlus cho phép. Ứng dụng không proxy hoặc tải hộ file ROM.</span>
+                </span>
+              </span>
+              <span class="micro-chip">Web</span>
+            </summary>
+            <form id="resolverForm">
+              <label class="field">
+                <span data-i18n="resolver.otaUrl">OTA URL</span>
+                <textarea id="resolverUrl" rows="2" placeholder="https://..." required></textarea>
+              </label>
+              <button class="primary-button" type="submit" id="resolveButton">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                </svg>
+                <span data-i18n="actions.resolve">Resolve</span>
+              </button>
+              <div class="challenge-panel" id="resolverChallengePanel" hidden>
+                <div id="resolverChallenge"></div>
+              </div>
+            </form>
+            <div class="alert" id="resolverError" hidden></div>
+            <dl class="details-list" id="resolverDetails"></dl>
+          </details>
 
           <section class="support-tools" aria-labelledby="supportToolsTitle">
             <h2 id="supportToolsTitle" data-i18n="tools.title">Công cụ hỗ trợ</h2>
@@ -184,132 +317,12 @@
               </a>
             </div>
           </section>
-        </aside>
-
-        <!-- RIGHT COLUMN: Display Deck (Information and Output Display Panels) -->
-        <section class="display-deck">
-          
-          <!-- TOP: Device OTA Archive Compartment -->
-          <div class="display-panel releases-panel">
-            <div class="toolbar">
-              <div>
-                <h2 id="releaseTitle" data-i18n="archive.title">Kho OTA của thiết bị</h2>
-                <div class="subtitle" id="releaseSummary" data-i18n="archive.selectDevice">Chọn thiết bị để xem các bản cập nhật</div>
-              </div>
-            </div>
-
-            <div class="release-filters" aria-label="Bộ lọc bản cập nhật" data-i18n-aria-label="archive.filtersAria">
-              <label class="field compact">
-                <span data-i18n="archive.region">Khu vực</span>
-                <select id="releaseRegion">
-                  <option value="" data-i18n="archive.all">Tất cả</option>
-                </select>
-              </label>
-              <label class="field compact">
-                <span data-i18n="archive.type">Loại</span>
-                <select id="releaseType">
-                  <option value="" data-i18n="archive.all">Tất cả</option>
-                  <option value="official" data-i18n="archive.official">Chính thức</option>
-                  <option value="beta" data-i18n="archive.beta">Beta</option>
-                </select>
-              </label>
-              <label class="field compact wide">
-                <span data-i18n="archive.version">Phiên bản</span>
-                <div class="search-input-wrapper">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="input-icon">
-                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                  </svg>
-                  <input id="releaseSearch" type="search" autocomplete="off" placeholder="Lọc phiên bản" data-i18n-placeholder="placeholder.releaseSearch" />
-                </div>
-              </label>
-            </div>
-
-            <div class="alert" id="releaseError" hidden></div>
-            <div class="release-table-wrap">
-              <table class="release-table">
-                <thead>
-                  <tr>
-                    <th data-i18n="archive.release">Bản cập nhật</th>
-                    <th data-i18n="archive.region">Khu vực</th>
-                    <th data-i18n="archive.type">Loại</th>
-                    <th data-i18n="archive.published">Ngày phát hành</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody id="releaseRows"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- BOTTOM: Query Results & Link Resolver Deck -->
-          <div class="display-panel results-deck">
-            
-            <!-- OTA Result details -->
-            <div class="results-card ota-result-card">
-              <div class="section-head">
-                <h2 data-i18n="result.title">Kết quả OTA</h2>
-                <span class="micro-chip" id="resultState">chờ</span>
-              </div>
-              <div class="alert" id="otaError" hidden></div>
-              <dl class="details-list" id="resultDetails">
-                <dt data-i18n="result.status">Trạng thái</dt>
-                <dd data-i18n="result.defaultStatus">Chọn thiết bị ở bảng điều khiển rồi gửi truy vấn chuẩn.</dd>
-              </dl>
-              <div class="button-row">
-                <button class="primary-button small" type="button" id="copyResultButton" disabled>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                  </svg>
-                  <span data-i18n="actions.copyUrl">Sao chép URL</span>
-                </button>
-                <button class="secondary-button small" type="button" id="openResultButton" disabled>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
-                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/>
-                  </svg>
-                  <span data-i18n="actions.open">Mở</span>
-                </button>
-              </div>
-            </div>
-
-            <!-- Link Resolver details -->
-            <div class="results-card resolver-card" id="resolverPanel" hidden>
-              <div class="section-head">
-                <div class="heading-with-info">
-                  <h2 data-i18n="resolver.title">Resolve link</h2>
-                  <details class="info-popover">
-                    <summary aria-label="Resolve link info" data-i18n-aria-label="resolver.infoLabel">i</summary>
-                    <p data-i18n="resolver.infoText">Resolver kiểm tra link OTA dạng downloadCheck/component protected và trả final URL tải trực tiếp khi OPlus cho phép. Ứng dụng không proxy hoặc tải hộ file ROM.</p>
-                  </details>
-                </div>
-                <span class="micro-chip">Web</span>
-              </div>
-              <form id="resolverForm">
-                <label class="field">
-                  <span data-i18n="resolver.otaUrl">OTA URL</span>
-                  <textarea id="resolverUrl" rows="2" placeholder="https://..." required></textarea>
-                </label>
-                <button class="primary-button" type="submit" id="resolveButton">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
-                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-                  </svg>
-                  <span data-i18n="actions.resolve">Resolve</span>
-                </button>
-                <div class="challenge-panel" id="resolverChallengePanel" hidden>
-                  <div id="resolverChallenge"></div>
-                </div>
-              </form>
-              <div class="alert" id="resolverError" hidden></div>
-              <dl class="details-list" id="resolverDetails"></dl>
-            </div>
-            
-          </div>
         </section>
-
       </main>
 
       <div class="toast" id="toast" role="status" aria-live="polite"></div>
     </div>
 
-    <script src="/static/app.js?v=tools-resolver-info"></script>
+    <script type="module" src="/static/app.js?v=tailwind-redesign"></script>
   </body>
 </html>
