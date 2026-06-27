@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import timezone
+from datetime import UTC
 
 import httpx
 import pytest
@@ -185,7 +185,7 @@ def test_live_provider_derives_cn_display_version_from_update_notes():
 
     assert result.real_version_name == "PKJ110_16.0.5.702(CN01)"
     assert result.published_at is not None
-    assert result.published_at.astimezone(timezone.utc).isoformat().startswith("2026-05-07")
+    assert result.published_at.astimezone(UTC).isoformat().startswith("2026-05-07")
     assert result.region_code == "CN"
 
 

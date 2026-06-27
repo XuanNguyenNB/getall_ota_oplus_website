@@ -15,6 +15,10 @@ dist/
 # Downloaded Harness CLI binary for installed project instances.
 scripts/bin/harness-cli
 
+# Downloaded Tailwind standalone CLI (re-fetched by scripts/build-css.*).
+scripts/bin/tailwindcss
+scripts/bin/tailwindcss.exe
+
 # Local runtime/cache artifacts.
 .harness-backup/
 .pytest_cache/

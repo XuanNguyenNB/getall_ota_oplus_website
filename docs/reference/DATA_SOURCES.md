@@ -41,8 +41,9 @@ Usage:
 ## China Domestic Catalog Sources
 
 Used as supplemental official sources for domestic China models missing from
-Oxygen Updater. Verified domestic rows use manifest `97` and are imported with
-`scan_enabled=true`.
+Oxygen Updater. Verified domestic rows use manifest `97` and are imported as
+catalog-visible devices; unattended live scanning is enabled separately through
+Telegram scan allowlist commands.
 
 Commands:
 
@@ -67,7 +68,8 @@ Sources:
 
 The importer records per-row provenance in `devices.source` using values such
 as `oppo_cn_specs`, `coloros_rom`, `opposhop_cn`, `lsctool_cn_catalog`, and
-`domestic_cn_seed`. Manual overrides are never overwritten.
+`domestic_cn_seed`. Manual overrides and existing `scan_enabled` operator
+choices are never overwritten.
 
 ## realme-ota
 
@@ -114,10 +116,33 @@ python -m ota_backend.catalog import-lsctool-archive
 
 The importer stores `.zip` and `downloadCheck` links exactly as supplied,
 marks archive rows with `source=lsctool_archive`, maps region codes to manifest
-codes, and records `official` versus `beta` type. Missing China devices created
-from archive rows are visible and scan-enabled; non-China archive-only devices
-remain hidden from the default device picker. It does not resolve links or
-enqueue Telegram notifications during archive backfill.
+codes, and records `official` versus `beta` type. Missing devices created from
+archive rows are catalog-visible but not auto-scan enabled. It does not resolve
+links or enqueue Telegram notifications during archive backfill.
+
+## LSCTool EDL ROM Archive
+
+Used as a third-party supplemental archive for EDL ROM ZIP links. It is not
+treated as an official OPlus source and is kept separate from OTA release rows.
+
+Endpoint:
+
+```text
+https://ota.lsctool.online/data/edl_data.json
+```
+
+Command:
+
+```powershell
+python -m ota_backend.catalog import-lsctool-edl --dry-run
+python -m ota_backend.catalog import-lsctool-edl
+```
+
+The importer reads rows with `model`, `version_name`, `region`, `date`, `link`
+and `updated_at`, stores direct ZIP links exactly as supplied, and skips rows
+without a usable OPlus brand, model, version, region or link. The browser UI
+shows EDL ROMs as copy/open archive links only; the backend does not proxy,
+cache, mirror or resolve EDL package contents.
 
 ## OPlus OTA Endpoints
 
@@ -169,7 +194,8 @@ code still talks only to FastAPI.
 
 Used for release notifications and user commands.
 
-The bot sends messages to a forum supergroup with `chat_id` and `message_thread_id`. There are three target topics:
+The bot sends messages to a command chat plus release targets identified by
+`chat_id` and optional `message_thread_id`. There are three brand targets:
 
 - OPPO
 - Realme

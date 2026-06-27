@@ -1,23 +1,26 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from threading import Lock
-from uuid import UUID
-from uuid import uuid4
+from typing import Any
+from uuid import UUID, uuid4
 
+from ota_backend.domain.device_groups import infer_scan_group_key, infer_scan_group_name
 from ota_backend.domain.models import (
     Brand,
     CatalogDeviceCandidate,
     Device,
     DeviceCatalogImport,
-    OtaTrack,
+    EdlRom,
     OtaProviderRelease,
+    OtaTrack,
     Page,
     PersistedRelease,
     PublicActionDecision,
     Release,
     ResolveRequest,
+    ScanEligibility,
     ScanRun,
     ScanTask,
     TelegramDelivery,
@@ -26,10 +29,16 @@ from ota_backend.domain.models import (
     release_key,
     utc_now,
 )
+from ota_backend.domain.scanner import (
+    is_legacy_oneplus_scan_candidate,
+    is_scan_capable,
+    scan_eligibility_for,
+)
 from ota_backend.repositories.interfaces import (
     AdminRepository,
-    DeviceRepository,
     CatalogImportRepository,
+    DeviceRepository,
+    EdlRomRepository,
     PublicActionRepository,
     ReleaseRepository,
     ResolverRepository,
@@ -85,7 +94,10 @@ def seed_devices() -> list[Device]:
 
 class InMemoryDeviceRepository(DeviceRepository):
     def __init__(self, devices: list[Device] | None = None) -> None:
-        self._devices = list(seed_devices() if devices is None else devices)
+        self._devices = [
+            _device_with_group_defaults(device)
+            for device in (seed_devices() if devices is None else devices)
+        ]
 
     def list_devices(
         self,
@@ -93,12 +105,15 @@ class InMemoryDeviceRepository(DeviceRepository):
         q: str | None,
         brand: str | None,
         enabled_only: bool,
+        scan_enabled_only: bool = False,
         limit: int = 50,
         offset: int = 0,
     ) -> Page[Device]:
         rows = self._devices
         if enabled_only:
-            rows = [row for row in rows if row.scan_enabled]
+            rows = [row for row in rows if row.catalog_visible]
+        if scan_enabled_only:
+            rows = [row for row in rows if is_scan_capable(row)]
         if brand:
             rows = [row for row in rows if row.brand == brand]
         if q:
@@ -106,10 +121,30 @@ class InMemoryDeviceRepository(DeviceRepository):
             rows = [
                 row
                 for row in rows
-                if needle in row.name.lower() or needle in row.product_model.lower()
+                if needle in row.name.lower()
+                or needle in row.product_model.lower()
+                or needle in row.scan_group_name.lower()
+                or needle in row.scan_group_key.lower()
             ]
         total = len(rows)
         return Page(items=rows[offset : offset + limit], total=total, limit=limit, offset=offset)
+
+    def list_scan_enabled_devices(
+        self,
+        *,
+        brand: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Page[Device]:
+        rows = [row for row in self._devices if is_scan_capable(row)]
+        if brand:
+            rows = [row for row in rows if row.brand == brand]
+        total = len(rows)
+        return Page(items=rows[offset : offset + limit], total=total, limit=limit, offset=offset)
+
+    def list_devices_by_scan_group(self, scan_group_key: str) -> list[Device]:
+        normalized = scan_group_key.strip().lower()
+        return [row for row in self._devices if row.scan_group_key == normalized]
 
     def get_by_product_model(self, product_model: str) -> Device | None:
         normalized = product_model.upper()
@@ -120,6 +155,16 @@ class InMemoryDeviceRepository(DeviceRepository):
 
     def get_by_id(self, device_id: UUID) -> Device | None:
         return next((row for row in self._devices if row.id == device_id), None)
+
+    def get_by_ids(self, device_ids: list[UUID]) -> dict[UUID, Device]:
+        # Single linear pass over the in-memory list. The Supabase
+        # implementation issues one `.in_("id", ...)` query and is the
+        # primary motivation for this bulk API; the memory shape stays
+        # simple because all rows already live in process memory.
+        if not device_ids:
+            return {}
+        wanted = set(device_ids)
+        return {row.id: row for row in self._devices if row.id in wanted}
 
     def update_scan_state(
         self,
@@ -150,21 +195,40 @@ class InMemoryDeviceRepository(DeviceRepository):
         scan_enabled: bool,
         source: str = "oxygen_updater",
     ) -> Device:
+        scan_group_name = infer_scan_group_name(
+            brand=brand,
+            name=name,
+            product_model=product_model,
+        )
+        scan_group_key = infer_scan_group_key(
+            brand=brand,
+            name=name,
+            product_model=product_model,
+        )
         existing = self.get_by_product_model(product_model)
         if existing is not None and existing.manual_override:
             return existing
         if existing is not None:
+            scan_enabled_value = existing.scan_enabled and manifest_code is not None
             updated = replace(
                 existing,
                 catalog_id=catalog_id,
                 brand=brand,
                 name=name,
                 manifest_code=manifest_code,
-                scan_enabled=scan_enabled,
+                scan_enabled=scan_enabled_value,
                 source=source,
+                catalog_visible=True,
+                scan_group_key=scan_group_key,
+                scan_group_name=scan_group_name,
+                scan_eligibility=scan_eligibility_for(
+                    scan_enabled=scan_enabled_value,
+                    manifest_code=manifest_code,
+                ),
             )
             self._devices[self._devices.index(existing)] = updated
             return updated
+        scan_enabled_value = scan_enabled and manifest_code is not None
         created = Device(
             id=uuid4(),
             catalog_id=catalog_id,
@@ -172,9 +236,16 @@ class InMemoryDeviceRepository(DeviceRepository):
             name=name,
             product_model=product_model,
             manifest_code=manifest_code,
-            scan_enabled=scan_enabled,
+            scan_enabled=scan_enabled_value,
             active_track="C",
             source=source,
+            catalog_visible=True,
+            scan_group_key=scan_group_key,
+            scan_group_name=scan_group_name,
+            scan_eligibility=scan_eligibility_for(
+                scan_enabled=scan_enabled_value,
+                manifest_code=manifest_code,
+            ),
         )
         self._devices.append(created)
         return created
@@ -191,6 +262,130 @@ class InMemoryDeviceRepository(DeviceRepository):
                 source=device.source,
             )
         return len(devices)
+
+    def set_scan_enabled(self, product_models: list[str], enabled: bool) -> list[Device]:
+        normalized = {model.upper() for model in product_models}
+        updated: list[Device] = []
+        for idx, existing in enumerate(self._devices):
+            if existing.product_model.upper() in normalized:
+                can_enable = enabled and existing.manifest_code is not None
+                row = replace(
+                    existing,
+                    scan_enabled=can_enable,
+                    scan_eligibility=scan_eligibility_for(
+                        scan_enabled=can_enable,
+                        manifest_code=existing.manifest_code,
+                    ),
+                    consecutive_failures=0 if can_enable else existing.consecutive_failures,
+                    last_scan_error_code=None if can_enable else existing.last_scan_error_code,
+                    last_scan_error_message=None
+                    if can_enable
+                    else existing.last_scan_error_message,
+                    last_scan_failed_at=None if can_enable else existing.last_scan_failed_at,
+                )
+                self._devices[idx] = row
+                updated.append(row)
+        return updated
+
+    def set_scan_eligibility(
+        self,
+        product_models: list[str],
+        eligibility: ScanEligibility,
+        *,
+        scan_enabled: bool | None = None,
+    ) -> list[Device]:
+        normalized = {model.upper() for model in product_models}
+        updated: list[Device] = []
+        effective_enabled = (
+            scan_enabled if scan_enabled is not None else eligibility == "active_scan"
+        )
+        for idx, existing in enumerate(self._devices):
+            if existing.product_model.upper() not in normalized:
+                continue
+            can_enable = effective_enabled and existing.manifest_code is not None
+            row = replace(
+                existing,
+                scan_enabled=can_enable,
+                scan_eligibility=(
+                    "invalid_for_scan" if existing.manifest_code is None else eligibility
+                ),
+                consecutive_failures=0 if can_enable else existing.consecutive_failures,
+                last_scan_error_code=None if can_enable else existing.last_scan_error_code,
+                last_scan_error_message=None if can_enable else existing.last_scan_error_message,
+                last_scan_failed_at=None if can_enable else existing.last_scan_failed_at,
+            )
+            self._devices[idx] = row
+            updated.append(row)
+        return updated
+
+    def set_all_scan_enabled(self, enabled: bool) -> int:
+        changed = 0
+        for idx, existing in enumerate(self._devices):
+            can_enable = enabled and existing.manifest_code is not None
+            if existing.scan_enabled != can_enable:
+                changed += 1
+            self._devices[idx] = replace(
+                existing,
+                scan_enabled=can_enable,
+                scan_eligibility=scan_eligibility_for(
+                    scan_enabled=can_enable,
+                    manifest_code=existing.manifest_code,
+                ),
+            )
+        return changed
+
+    def count_scan_enabled(self) -> int:
+        return sum(1 for device in self._devices if is_scan_capable(device))
+
+    def count_scan_eligibility(self) -> dict[str, int]:
+        counts = {"active_scan": 0, "archive_only": 0, "invalid_for_scan": 0}
+        for device in self._devices:
+            counts[device.scan_eligibility] = counts.get(device.scan_eligibility, 0) + 1
+        return counts
+
+    def record_scan_success(self, device_id: UUID) -> Device:
+        for idx, existing in enumerate(self._devices):
+            if existing.id == device_id:
+                updated = replace(
+                    existing,
+                    consecutive_failures=0,
+                    last_scan_error_code=None,
+                    last_scan_error_message=None,
+                    last_scan_failed_at=None,
+                )
+                self._devices[idx] = updated
+                return updated
+        raise KeyError(f"device not found: {device_id}")
+
+    def record_scan_failure(
+        self,
+        device_id: UUID,
+        *,
+        error_code: str,
+        error_message: str,
+        archive_threshold: int,
+    ) -> Device:
+        for idx, existing in enumerate(self._devices):
+            if existing.id != device_id:
+                continue
+            failures = existing.consecutive_failures + 1
+            archive = (
+                failures >= archive_threshold
+                and error_code in {"UPSTREAM_ERROR", "UPSTREAM_TIMEOUT"}
+                and is_legacy_oneplus_scan_candidate(existing)
+            )
+            updated = replace(
+                existing,
+                scan_enabled=False if archive else existing.scan_enabled,
+                scan_eligibility="archive_only" if archive else existing.scan_eligibility,
+                consecutive_failures=failures,
+                last_scan_error_code=error_code,
+                last_scan_error_message=error_message[:300],
+                last_scan_failed_at=utc_now(),
+            )
+            self._devices[idx] = updated
+            return updated
+        raise KeyError(f"device not found: {device_id}")
 
 
 class InMemoryReleaseRepository(ReleaseRepository):
@@ -210,36 +405,23 @@ class InMemoryReleaseRepository(ReleaseRepository):
         sort: str = "discovered",
         limit: int = 50,
         offset: int = 0,
+        last_seen_since: datetime | None = None,
     ) -> Page[Release]:
         rows = self._releases
         if brand:
             rows = [row for row in rows if row.brand == brand]
         if product_model:
-            rows = [
-                row
-                for row in rows
-                if row.product_model.upper() == product_model.upper()
-            ]
+            rows = [row for row in rows if row.product_model.upper() == product_model.upper()]
         if manifest_code:
-            rows = [
-                row
-                for row in rows
-                if row.manifest_code.upper() == manifest_code.upper()
-            ]
+            rows = [row for row in rows if row.manifest_code.upper() == manifest_code.upper()]
         if region_code:
-            rows = [
-                row
-                for row in rows
-                if (row.region_code or "").upper() == region_code.upper()
-            ]
+            rows = [row for row in rows if (row.region_code or "").upper() == region_code.upper()]
         if release_type:
-            rows = [
-                row
-                for row in rows
-                if row.release_type.lower() == release_type.lower()
-            ]
+            rows = [row for row in rows if row.release_type.lower() == release_type.lower()]
         if source:
             rows = [row for row in rows if row.source == source]
+        if last_seen_since is not None:
+            rows = [row for row in rows if row.last_seen_at >= last_seen_since]
         if q:
             needle = q.lower()
             rows = [
@@ -293,12 +475,112 @@ class InMemoryReleaseRepository(ReleaseRepository):
 
         persisted = Release.from_provider(release, discovered_by=discovered_by)  # type: ignore[arg-type]
         if persisted.discovered_at.tzinfo is None:
-            persisted.discovered_at = persisted.discovered_at.replace(tzinfo=timezone.utc)
+            persisted.discovered_at = persisted.discovered_at.replace(tzinfo=UTC)
         self._releases.append(persisted)
         return PersistedRelease(release=persisted, is_new=True)
 
     def get_by_id(self, release_id: UUID) -> Release | None:
         return next((row for row in self._releases if row.id == release_id), None)
+
+
+class InMemoryEdlRomRepository(EdlRomRepository):
+    def __init__(self, roms: list[EdlRom] | None = None) -> None:
+        self._roms = list([] if roms is None else roms)
+
+    def list_edl_roms(
+        self,
+        *,
+        q: str | None = None,
+        brand: str | None = None,
+        product_model: str | None = None,
+        region_code: str | None = None,
+        sort: str = "build",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Page[EdlRom]:
+        rows = self._roms
+        if brand:
+            rows = [row for row in rows if row.brand == brand]
+        if product_model:
+            rows = [row for row in rows if row.product_model.upper() == product_model.upper()]
+        if region_code:
+            rows = [row for row in rows if (row.region_code or "").upper() == region_code.upper()]
+        if q:
+            needle = q.lower()
+            rows = [
+                row
+                for row in rows
+                if needle in row.product_model.lower()
+                or needle in (row.device_name or "").lower()
+                or needle in row.version_name.lower()
+            ]
+        if sort == "imported":
+            rows = sorted(
+                rows,
+                key=lambda row: row.source_updated_at or row.updated_at,
+                reverse=True,
+            )
+        else:
+            rows = sorted(
+                rows,
+                key=lambda row: row.build_date or row.source_updated_at or row.updated_at,
+                reverse=True,
+            )
+        total = len(rows)
+        return Page(items=rows[offset : offset + limit], total=total, limit=limit, offset=offset)
+
+    def upsert_edl_roms(self, roms: list[EdlRom]) -> int:
+        for rom in roms:
+            key = _edl_key(rom)
+            for idx, existing in enumerate(self._roms):
+                if _edl_key(existing) == key:
+                    self._roms[idx] = replace(
+                        existing,
+                        brand=rom.brand,
+                        device_name=rom.device_name or existing.device_name,
+                        region_code=rom.region_code or existing.region_code,
+                        build_date=rom.build_date or existing.build_date,
+                        source=rom.source,
+                        source_updated_at=rom.source_updated_at or existing.source_updated_at,
+                        raw_response=rom.raw_response or existing.raw_response,
+                        updated_at=utc_now(),
+                    )
+                    break
+            else:
+                self._roms.append(replace(rom, id=rom.id or uuid4()))
+        return len(roms)
+
+
+def _edl_key(rom: EdlRom) -> tuple[str, str, str]:
+    return (rom.product_model.upper(), rom.version_name, rom.download_url)
+
+
+def _device_with_group_defaults(device: Device) -> Device:
+    scan_group_name = device.scan_group_name or infer_scan_group_name(
+        brand=device.brand,
+        name=device.name,
+        product_model=device.product_model,
+    )
+    scan_group_key = device.scan_group_key or infer_scan_group_key(
+        brand=device.brand,
+        name=device.name,
+        product_model=device.product_model,
+    )
+    eligibility = device.scan_eligibility
+    scan_enabled = device.scan_enabled
+    if device.manifest_code is None:
+        eligibility = "invalid_for_scan"
+        scan_enabled = False
+    elif not device.scan_enabled:
+        eligibility = "archive_only"
+    return replace(
+        device,
+        scan_enabled=scan_enabled,
+        catalog_visible=device.catalog_visible,
+        scan_group_key=scan_group_key,
+        scan_group_name=scan_group_name,
+        scan_eligibility=eligibility,
+    )
 
 
 class InMemoryScanRepository(ScanRepository):
@@ -307,9 +589,7 @@ class InMemoryScanRepository(ScanRepository):
         self._tasks: list[ScanTask] = []
         self._lock = Lock()
 
-    def create_run(
-        self, *, cycle_day: int, total_tasks: int, status: str = "running"
-    ) -> ScanRun:
+    def create_run(self, *, cycle_day: int, total_tasks: int, status: str = "running") -> ScanRun:
         now = utc_now()
         run = ScanRun(
             id=uuid4(),
@@ -389,12 +669,18 @@ class InMemoryScanRepository(ScanRepository):
                 tracks_checked=list(tracks_checked),
                 rui_candidates_checked=list(rui_candidates_checked),
                 found_release_id=found_release_id,
+                # The "new" flag is recorded so the run counter can be
+                # recomputed deterministically from tasks at any time.
+                # The previous implementation incremented a separate
+                # counter on each completion, which left stale counts
+                # behind if the same task was retried into a non-new
+                # outcome.
+                found_new_release=bool(new_release),
                 error_code=None,
                 error_message=None,
                 finished_at=utc_now(),
             )
             self._replace_task(updated)
-            self._increment_new_release(updated.scan_run_id) if new_release else None
             self._refresh_run_counts(updated.scan_run_id)
             return replace(updated)
 
@@ -452,6 +738,11 @@ class InMemoryScanRepository(ScanRepository):
             self._refresh_run_counts(latest.id)
             return replace(self._get_run(latest.id))
 
+    def list_recent_runs(self, *, limit: int = 7) -> list[ScanRun]:
+        with self._lock:
+            runs = sorted(self._runs, key=lambda run: run.started_at, reverse=True)
+            return [replace(run) for run in runs[:limit]]
+
     def _get_run(self, scan_run_id: UUID) -> ScanRun:
         for run in self._runs:
             if run.id == scan_run_id:
@@ -479,18 +770,26 @@ class InMemoryScanRepository(ScanRepository):
         raise KeyError(f"scan task not found: {updated.id}")
 
     def _increment_new_release(self, scan_run_id: UUID) -> None:
-        run = self._get_run(scan_run_id)
-        self._replace_run(replace(run, new_releases=run.new_releases + 1))
+        # Deprecated: kept as a no-op for compatibility. ``new_releases`` is
+        # now recomputed from tasks in ``_refresh_run_counts`` so retries
+        # cannot leak a stale +1 into the run counter.
+        return None
 
     def _refresh_run_counts(self, scan_run_id: UUID) -> None:
         run = self._get_run(scan_run_id)
         tasks = [task for task in self._tasks if task.scan_run_id == scan_run_id]
+        new_releases = sum(
+            1
+            for task in tasks
+            if task.status == "completed" and getattr(task, "found_new_release", False)
+        )
         self._replace_run(
             replace(
                 run,
                 total_tasks=len(tasks),
                 completed_tasks=sum(1 for task in tasks if task.status == "completed"),
                 failed_tasks=sum(1 for task in tasks if task.status == "failed"),
+                new_releases=new_releases,
             )
         )
 
@@ -572,8 +871,7 @@ class InMemoryTelegramRepository(TelegramRepository):
                 and notification.next_attempt_at <= now
             )
             if (
-                notification.status != "queued"
-                and not retry_ready
+                notification.status != "queued" and not retry_ready
             ) or notification.attempt_count >= max_attempts:
                 continue
             target = next(
@@ -618,7 +916,7 @@ class InMemoryTelegramRepository(TelegramRepository):
             next_attempt_at=utc_now() + timedelta(seconds=retry_seconds),
         )
 
-    def _update_notification(self, notification_id: UUID, **changes: object) -> TelegramNotification:
+    def _update_notification(self, notification_id: UUID, **changes: Any) -> TelegramNotification:
         for index, current in enumerate(self._notifications):
             if current.id == notification_id:
                 updated = replace(current, **changes)
@@ -675,7 +973,7 @@ class InMemoryCatalogImportRepository(CatalogImportRepository):
             finished_at=utc_now(),
         )
 
-    def _update(self, import_id: UUID, **changes: object) -> DeviceCatalogImport:
+    def _update(self, import_id: UUID, **changes: Any) -> DeviceCatalogImport:
         for index, current in enumerate(self.imports):
             if current.id == import_id:
                 updated = replace(current, **changes)
@@ -711,16 +1009,10 @@ class InMemoryPublicActionRepository(PublicActionRepository):
                 1,
             )
             return PublicActionDecision(allowed=False, retry_after_seconds=retry_after)
-        same_query = [
-            item for item in recent if item[2] == query_key
-        ]
+        same_query = [item for item in recent if item[2] == query_key]
         if cooldown_seconds and same_query:
             retry_after = int(
-                (
-                    same_query[-1][3]
-                    + timedelta(seconds=cooldown_seconds)
-                    - now
-                ).total_seconds()
+                (same_query[-1][3] + timedelta(seconds=cooldown_seconds) - now).total_seconds()
             )
             if retry_after > 0:
                 return PublicActionDecision(allowed=False, retry_after_seconds=retry_after)

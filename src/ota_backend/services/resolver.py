@@ -4,8 +4,9 @@ import ipaddress
 import json
 import re
 import socket
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable, Protocol
+from typing import Any, Protocol
 from urllib.parse import urljoin, urlsplit, urlunsplit
 from uuid import uuid4
 
@@ -30,8 +31,13 @@ class ResolverResult:
 
 
 class ResolverTransport(Protocol):
-    def head(self, url: str, *, timeout: float) -> tuple[int, str | None]:
-        ...
+    def head(
+        self,
+        url: str,
+        *,
+        timeout: float,
+        pinned_ip: str | None = ...,
+    ) -> tuple[int, str | None]: ...
 
 
 OPLUS_DOWNLOAD_CHECK_HEADERS = {
@@ -46,13 +52,20 @@ OPLUS_CN_COST_MANUAL_PREFIX = "gauss-componentotacostmanual-cn."
 
 
 class HttpxResolverTransport:
-    def head(self, url: str, *, timeout: float) -> tuple[int, str | None]:
+    def head(
+        self,
+        url: str,
+        *,
+        timeout: float,
+        pinned_ip: str | None = None,
+    ) -> tuple[int, str | None]:
         if _is_oplus_intermediate_url(url):
-            response = httpx.get(
+            response = self._send(
+                "GET",
                 url,
                 headers=OPLUS_DOWNLOAD_CHECK_HEADERS,
-                follow_redirects=False,
                 timeout=timeout,
+                pinned_ip=pinned_ip,
             )
             if 300 <= response.status_code < 400:
                 return response.status_code, response.headers.get("location")
@@ -62,13 +75,85 @@ class HttpxResolverTransport:
                     return 302, location
             return response.status_code, response.headers.get("location")
 
-        response = httpx.head(
+        response = self._send(
+            "HEAD",
             url,
-            headers=OPLUS_DIRECT_CDN_HEADERS if _is_oplus_browser_blocked_direct_url(url) else None,
-            follow_redirects=False,
+            headers=(
+                OPLUS_DIRECT_CDN_HEADERS if _is_oplus_browser_blocked_direct_url(url) else None
+            ),
             timeout=timeout,
+            pinned_ip=pinned_ip,
         )
         return response.status_code, response.headers.get("location")
+
+    @staticmethod
+    def _send(
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str] | None,
+        timeout: float,
+        pinned_ip: str | None,
+    ) -> httpx.Response:
+        if pinned_ip is None:
+            # Preserve the simple, monkey-patchable httpx.get/head behavior for
+            # local development and existing unit tests.
+            if method == "GET":
+                return httpx.get(
+                    url,
+                    headers=headers,
+                    follow_redirects=False,
+                    timeout=timeout,
+                )
+            return httpx.head(
+                url,
+                headers=headers,
+                follow_redirects=False,
+                timeout=timeout,
+            )
+        return _send_with_pinned_ip(
+            method,
+            url,
+            headers=headers,
+            timeout=timeout,
+            pinned_ip=pinned_ip,
+        )
+
+
+def _send_with_pinned_ip(
+    method: str,
+    url: str,
+    *,
+    headers: dict[str, str] | None,
+    timeout: float,
+    pinned_ip: str,
+) -> httpx.Response:
+    """Send an HTTP request to an explicitly validated IP address.
+
+    The URL hostname is rewritten to the pinned IP literal, while the original
+    hostname is preserved in the Host header and in the TLS SNI/cert
+    verification name. This closes the TOCTOU window between DNS validation
+    and the actual TCP connect, so a rebind that suddenly maps the hostname
+    to a private/internal IP cannot redirect the resolver.
+    """
+
+    parsed = urlsplit(url)
+    hostname = (parsed.hostname or "").rstrip(".").lower()
+    if not hostname:
+        raise ResolverError("VALIDATION_ERROR", "A valid HTTP(S) URL is required.")
+    port = parsed.port
+    pinned_netloc = pinned_ip + (f":{port}" if port else "")
+    pinned_url = urlunsplit((parsed.scheme, pinned_netloc, parsed.path or "/", parsed.query, ""))
+    final_headers = dict(headers or {})
+    final_headers["Host"] = hostname
+    request_obj = httpx.Request(
+        method,
+        pinned_url,
+        headers=final_headers,
+        extensions={"sni_hostname": hostname},
+    )
+    with httpx.Client(timeout=timeout) as client:
+        return client.send(request_obj, follow_redirects=False)
 
 
 class ResolverService:
@@ -91,20 +176,30 @@ class ResolverService:
 
     def resolve(self, value: str, *, source: str = "web") -> ResolverResult:
         stored_input: str | None = None
+        # Per-resolve DNS cache. Reused for every hop so a hostname is
+        # resolved (and validated) exactly once, and the same IP is reused
+        # for the actual TCP connect via pinned-IP transport. This closes the
+        # DNS rebind window between safety validation and the HTTP fetch.
+        dns_cache: dict[str, list[str]] = {}
         try:
-            original = self._validated_safe_url(value)
+            original = self._validated_safe_url(value, dns_cache=dns_cache)
             stored_input = original
             current = self._component_link_transform(original)
-            current = self._validated_safe_url(current)
+            current = self._validated_safe_url(current, dns_cache=dns_cache)
             normalized_legacy_auto = _is_oplus_cn_cost_auto_url(original)
             for hop in range(self._max_redirects + 1):
+                pinned_ip = self._pinned_ip_for(current, dns_cache=dns_cache)
                 status_code, location = self._transport.head(
-                    current, timeout=self._timeout_seconds
+                    current,
+                    timeout=self._timeout_seconds,
+                    pinned_ip=pinned_ip,
                 )
                 if 300 <= status_code < 400 and location:
                     if hop >= self._max_redirects:
                         raise ResolverError("RESOLVE_FAILED", "Too many resolver redirects.")
-                    current = self._validated_safe_url(urljoin(current, location))
+                    current = self._validated_safe_url(
+                        urljoin(current, location), dns_cache=dns_cache
+                    )
                     continue
                 if 200 <= status_code < 300:
                     # If the final URL still contains intermediate servlet endpoints,
@@ -112,7 +207,8 @@ class ResolverService:
                     if _is_oplus_intermediate_url(current):
                         raise ResolverError(
                             "RESOLVE_FAILED",
-                            "The OTA link has expired or the signature is invalid (upstream error 2306).",
+                            "The OTA link has expired or the signature is invalid"
+                            " (upstream error 2306).",
                         )
                     result = ResolverResult(input_url=original, resolved_url=current)
                     self._repository.record(
@@ -149,31 +245,64 @@ class ResolverService:
             )
             raise
 
-    def _validated_safe_url(self, value: str) -> str:
+    def _validated_safe_url(
+        self,
+        value: str,
+        *,
+        dns_cache: dict[str, list[str]] | None = None,
+    ) -> str:
         parsed = urlsplit(value.strip())
         if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
             raise ResolverError("VALIDATION_ERROR", "A valid HTTP(S) URL is required.")
         if parsed.username or parsed.password:
             raise ResolverError("VALIDATION_ERROR", "URL credentials are not allowed.")
         if parsed.port not in {None, 80, 443}:
-            raise ResolverError("RESOLVE_BLOCKED_HOST", "This URL port is not allowed.", status="blocked")
+            raise ResolverError(
+                "RESOLVE_BLOCKED_HOST", "This URL port is not allowed.", status="blocked"
+            )
         hostname = parsed.hostname.rstrip(".").lower()
         if not any(
             hostname == suffix or hostname.endswith("." + suffix)
             for suffix in self._allowed_suffixes
         ):
-            raise ResolverError("RESOLVE_BLOCKED_HOST", "This host is not allowed.", status="blocked")
-        addresses = self._dns_resolver(hostname)
+            raise ResolverError(
+                "RESOLVE_BLOCKED_HOST", "This host is not allowed.", status="blocked"
+            )
+        if dns_cache is not None and hostname in dns_cache:
+            addresses = dns_cache[hostname]
+        else:
+            addresses = self._dns_resolver(hostname)
+            if dns_cache is not None:
+                dns_cache[hostname] = addresses
         if not addresses:
             raise ResolverError("RESOLVE_FAILED", "Host resolution failed.")
         for address in addresses:
             ip = ipaddress.ip_address(address)
             if not ip.is_global:
-                raise ResolverError("RESOLVE_BLOCKED_HOST", "This host is not allowed.", status="blocked")
+                raise ResolverError(
+                    "RESOLVE_BLOCKED_HOST", "This host is not allowed.", status="blocked"
+                )
         netloc = hostname
         if parsed.port:
             netloc += f":{parsed.port}"
         return urlunsplit((parsed.scheme.lower(), netloc, parsed.path or "/", parsed.query, ""))
+
+    def _pinned_ip_for(
+        self,
+        url: str,
+        *,
+        dns_cache: dict[str, list[str]],
+    ) -> str | None:
+        parsed = urlsplit(url)
+        hostname = (parsed.hostname or "").rstrip(".").lower()
+        if not hostname:
+            return None
+        addresses = dns_cache.get(hostname)
+        if not addresses:
+            return None
+        # Prefer the first validated address. All addresses passed the
+        # is_global check above, so any is safe to use.
+        return addresses[0]
 
     @staticmethod
     def _component_link_transform(value: str) -> str:
@@ -193,7 +322,10 @@ class ResolverService:
         try:
             return sorted(
                 {
-                    entry[4][0]
+                    # entry[4] is a sockaddr tuple; for AF_INET the first
+                    # element is an IPv4 string, for AF_INET6 it is also a
+                    # string. Coerce defensively to satisfy strict typing.
+                    str(entry[4][0])
                     for entry in socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
                 }
             )

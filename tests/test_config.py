@@ -47,5 +47,19 @@ def test_supabase_backend_requires_server_key(monkeypatch):
 
 def test_blank_optional_telegram_chat_id_is_none(monkeypatch):
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "")
+    monkeypatch.setenv("TELEGRAM_COMMAND_CHAT_ID", "")
+    monkeypatch.setenv("TELEGRAM_WORKER_LOG_CHAT_ID", "")
 
-    assert Settings().telegram_chat_id is None
+    settings = Settings()
+    assert settings.telegram_chat_id is None
+    assert settings.telegram_command_chat_id is None
+    assert settings.telegram_worker_log_chat_id is None
+
+
+def test_effective_telegram_chats_fallback_to_legacy(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "123")
+
+    settings = Settings()
+
+    assert settings.effective_telegram_command_chat_id == 123
+    assert settings.effective_telegram_worker_log_chat_id == 123

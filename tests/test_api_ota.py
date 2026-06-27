@@ -59,3 +59,45 @@ def test_ota_query_rejects_invalid_manifest(client):
     assert response.status_code == 400
     assert response.json()["ok"] is False
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_ota_query_rejects_out_of_range_rui_candidates(client):
+    payload = _request_payload()
+    payload["rui_candidates"] = [0, 8, 7]
+
+    response = client.post("/api/ota", json=payload)
+
+    assert response.status_code == 422
+    assert response.json()["ok"] is False
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_ota_query_rejects_too_many_rui_candidates(client):
+    payload = _request_payload()
+    payload["rui_candidates"] = [1, 2, 3, 4, 5, 6]
+
+    response = client.post("/api/ota", json=payload)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_ota_query_rejects_empty_rui_candidates(client):
+    payload = _request_payload()
+    payload["rui_candidates"] = []
+
+    response = client.post("/api/ota", json=payload)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_ota_query_rejects_non_json_body(client):
+    response = client.post(
+        "/api/ota",
+        content=b"not-json",
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"

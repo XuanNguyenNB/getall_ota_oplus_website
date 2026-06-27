@@ -12,8 +12,10 @@ Implemented and proven offline:
   archive browsing, and operator scan status.
 - Memory/fake defaults plus opt-in Supabase, Oxygen Updater, and direct
   `realme-ota` live adapters.
-- Full approved 26-code Universal OTA manifest map, catalog importer, and bounded worker CLI.
+- Full approved 26-code Universal OTA manifest map, catalog importer, smart
+  scan allowlist, grouped Telegram scan controls, and bounded worker CLI.
 - Third-party LSCTool archive importer and per-device multi-release archive UI.
+- Third-party LSCTool EDL ROM archive importer and browser EDL link tab.
 - Public controlled-access code: Turnstile validation, hashed quota/cooldown
   persistence, fresh-result OTA caching, Supabase Auth admin checks, and admin
   scan enqueue.
@@ -64,11 +66,22 @@ python -m ota_backend.catalog import-domestic-cn
 python -m ota_backend.catalog import-all
 python -m ota_backend.catalog import-lsctool-archive --dry-run
 python -m ota_backend.catalog import-lsctool-archive
+python -m ota_backend.catalog import-lsctool-edl --dry-run
+python -m ota_backend.catalog import-lsctool-edl
+python -m ota_backend.worker --cleanup-scan-eligibility --dry-run
+python -m ota_backend.worker --cleanup-scan-eligibility
 python -m ota_backend.worker --once --max-tasks 1
 ```
 
 Do not use a server key previously shared outside secure environment
 configuration. Rotate it first.
+
+Catalog imports populate searchable devices and archive rows; they do not
+automatically opt every imported model into unattended live scanning. Use the
+Telegram admin `/scan` commands to enable only the device groups or variants
+you want the worker to crawl. The worker scans `active_scan` variants grouped
+by device family, not every catalog row, and skips rows missing manifests or
+rows with repeated upstream failures.
 
 ## Public Runtime
 
@@ -90,6 +103,11 @@ PUBLIC_RATE_LIMIT_SALT=server-only-random-value
 OTA_PUBLIC_CACHE_TTL_SECONDS=1800
 OTA_PUBLIC_RATE_LIMIT_PER_HOUR=5
 RESOLVER_PUBLIC_RATE_LIMIT_PER_HOUR=10
+SCAN_CYCLE_DAYS=1
+SCAN_MAX_TASKS_PER_RUN=200
+SCAN_FAILURE_RATE_THRESHOLD=0.10
+SCAN_FAILURE_ARCHIVE_THRESHOLD=3
+SCAN_TIMEOUT_RETRIES=1
 ```
 
 In public mode, anonymous users may read catalog/releases and submit standard
@@ -110,23 +128,34 @@ These values must only be set after the bounded proof in
 
 ## Telegram
 
-The bot service drains queued Telegram notifications and handles `/latest` and
-`/status`:
+The bot service drains queued Telegram notifications and handles `/latest`
+and `/status`:
 
 ```text
 TELEGRAM_BOT_TOKEN=server-only-token
+TELEGRAM_COMMAND_CHAT_ID=7063171724
+TELEGRAM_WORKER_LOG_CHAT_ID=7063171724
 TELEGRAM_CHAT_ID=-1001234567890
 TELEGRAM_ADMIN_USER_IDS=123456789
+TELEGRAM_WORKER_LOGS_ENABLED=true
+TELEGRAM_WORKER_LOG_RELEASE_LIMIT=10
 ```
 
 ```powershell
+python -m ota_backend.telegram_bot --check-config
 python -m ota_backend.telegram_bot --once-delivery
 python -m ota_backend.telegram_bot
 ```
 
-The scanner only enqueues notifications. The bot owns actual sends and retry
-state. Telegram `/resolve` remains deferred until the web resolver has live
-proof.
+The scanner only enqueues notifications. The bot owns actual sends, retry
+state, `/latest`, `/status`, and admin-only scan allowlist commands such as
+`/scan search`, `/scan on-group`, `/scan off-group`, `/scan on`, `/scan off`,
+`/scan list on`, and `/scan off-all CONFIRM`. When worker logs are enabled,
+each scheduled scanner run posts one bounded summary with shard coverage,
+failed models and new releases to the worker-log chat. `/notify backfill-run
+<scan_run_id> [limit]` can safely enqueue releases from an earlier run after
+Telegram targets are seeded. Telegram `/resolve` remains deferred until the
+web resolver has live proof.
 
 ## Deployment
 

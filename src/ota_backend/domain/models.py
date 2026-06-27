@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Generic, Literal, TypeVar
 from uuid import UUID, uuid4
 
@@ -9,6 +9,7 @@ Brand = Literal["oppo", "realme", "oneplus"]
 OtaTrack = Literal["A", "C", "F", "H"]
 ScanRunStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
 ScanTaskStatus = Literal["queued", "running", "completed", "failed", "skipped"]
+ScanEligibility = Literal["active_scan", "archive_only", "invalid_for_scan"]
 TelegramNotificationStatus = Literal["queued", "sending", "sent", "failed"]
 CatalogImportStatus = Literal["running", "completed", "failed"]
 ResolveStatus = Literal["success", "failed", "blocked"]
@@ -37,6 +38,14 @@ class Device:
     bootstrap_done: bool = False
     manual_override: bool = False
     source: str = "manual"
+    catalog_visible: bool = True
+    scan_group_key: str = ""
+    scan_group_name: str = ""
+    scan_eligibility: ScanEligibility = "active_scan"
+    consecutive_failures: int = 0
+    last_scan_error_code: str | None = None
+    last_scan_error_message: str | None = None
+    last_scan_failed_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -48,6 +57,10 @@ class CatalogDeviceCandidate:
     manifest_code: str | None
     scan_enabled: bool
     source: str = "oxygen_updater"
+    catalog_visible: bool = True
+    scan_group_key: str = ""
+    scan_group_name: str = ""
+    scan_eligibility: ScanEligibility = "archive_only"
 
 
 @dataclass(frozen=True)
@@ -120,8 +133,8 @@ class Release:
     @classmethod
     def from_provider(
         cls, result: OtaProviderRelease, discovered_by: Literal["manual", "worker", "import"]
-    ) -> "Release":
-        now = datetime.now(timezone.utc)
+    ) -> Release:
+        now = datetime.now(UTC)
         return cls(
             id=uuid4(),
             brand=result.brand,
@@ -158,6 +171,23 @@ class PersistedRelease:
 
 
 @dataclass
+class EdlRom:
+    id: UUID
+    brand: Brand
+    product_model: str
+    version_name: str
+    download_url: str
+    source: str
+    created_at: datetime
+    updated_at: datetime
+    device_name: str | None = None
+    region_code: str | None = None
+    build_date: datetime | None = None
+    source_updated_at: datetime | None = None
+    raw_response: dict[str, Any] | None = None
+
+
+@dataclass
 class ScanRun:
     id: UUID
     status: ScanRunStatus
@@ -181,6 +211,12 @@ class ScanTask:
     tracks_checked: list[OtaTrack] = field(default_factory=list)
     rui_candidates_checked: list[int] = field(default_factory=list)
     found_release_id: UUID | None = None
+    # Whether the completed task produced a new release row (i.e. the
+    # upstream OTA response represented a release not seen before). Used by
+    # the in-memory repository (and the Supabase RPC) to recompute
+    # ``scan_runs.new_releases`` idempotently from tasks instead of
+    # incrementing a separate counter on every completion.
+    found_new_release: bool = False
     error_code: str | None = None
     error_message: str | None = None
     started_at: datetime | None = None
@@ -192,10 +228,10 @@ class TelegramTarget:
     id: UUID
     brand: Brand
     chat_id: int
-    message_thread_id: int
+    message_thread_id: int | None
     enabled: bool = True
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 @dataclass
@@ -255,7 +291,7 @@ class ResolveRequest:
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def release_key(release: OtaProviderRelease | Release) -> tuple[str, str, str, str]:

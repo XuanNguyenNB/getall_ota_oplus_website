@@ -20,7 +20,7 @@ Current offline proof:
 - complete approved manifest-map/server-selection tests
 - migration structural test
 - logging sanitizer test
-- scanner domain and application tests for stable 7-day sharding, bootstrap
+- scanner domain and application tests for stable configurable sharding, bootstrap
   order, recurring track progression, task claiming, retry/non-retry outcomes,
   release upsert deduplication, notification queue deduplication, scan status
   API shape, and Phase 3 migration structure
@@ -30,6 +30,7 @@ Current offline proof:
 - public Turnstile enforcement, sensitive-input rejection, cache source,
   quota headers and admin endpoint tests
 - Telegram notification send/failure state tests
+- Telegram scan allowlist command tests
 - resolver transform, unsafe-DNS and feature-gate tests
 - static tests for public/admin, Telegram delivery and resolver migrations
 

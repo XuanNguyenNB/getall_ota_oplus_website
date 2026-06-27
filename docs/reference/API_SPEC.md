@@ -18,18 +18,46 @@ Returns service identity and browser-safe feature flags:
   "features": {
     "public_site": false,
     "resolver": false,
-    "turnstile_site_key": null
+    "turnstile_site_key": null,
+    "admin_auth_enabled": false
   }
 }
 ```
 
 The Turnstile site key is public widget configuration. No server secret is
-returned.
+returned. The Supabase URL and anon key are no longer echoed here; the admin
+UI obtains them through `GET /api/admin/bootstrap` so the obvious liveness
+URL cannot be scraped for credential pairs.
+
+### `GET /api/admin/bootstrap`
+
+Returns the Supabase Auth bootstrap config used by the admin UI to construct
+a Supabase client before the operator signs in. Cannot itself require admin
+auth (the JWT does not exist yet); the anon key is the documented public
+Supabase credential and is protected by RLS plus admin allowlist tables.
+
+```json
+{
+  "ok": true,
+  "admin_auth": {
+    "supabase_url": "https://project-ref.supabase.co",
+    "supabase_anon_key": "anon-public-key"
+  }
+}
+```
+
+When Supabase is not configured, `admin_auth` is `null`.
 
 ### `GET /api/devices`
 
-Lists devices with `q`, `brand`, `enabled_only`, `limit` and `offset`.
-Responses include `count`, `total`, `limit`, `offset` and `devices`.
+Lists catalog-visible devices with `q`, `brand`, `enabled_only`,
+`scan_enabled_only`, `limit` and `offset`. `enabled_only=true` now means
+`catalog_visible=true`; `scan_enabled_only=true` filters scan-capable
+`active_scan` variants. Responses include `count`, `total`, `limit`, `offset`
+and `devices`. Device items include `scan_group_key`, `scan_group_name`,
+`scan_eligibility` and sanitized failure metadata so operator tooling can
+group variants such as China/global/region models under one user-facing device
+family and explain why a variant is not being crawled.
 
 ### `POST /api/ota`
 
@@ -60,6 +88,11 @@ mode is enabled:
 - a fresh matching release can be returned without another upstream request;
 - response header `X-OTA-Source` is `cache` or `live`.
 
+Public OTA queries strictly reject the operator-only fields `imei0`, `imei1`,
+`guid` and `beta=true` at the schema boundary. They are stripped before reaching
+the live provider and produce a `VALIDATION_ERROR` with HTTP 400. Identified
+operator queries continue to use the same endpoint without public mode enabled.
+
 ### `GET /api/releases`
 
 Lists persisted releases with `q`, `brand`, `product_model`, `manifest_code`,
@@ -69,6 +102,17 @@ items include track, manifest, RUI/source archive metadata, about-update URL,
 security patch and download URL. The browser UI does not display `source`, but
 the field remains part of the API for internal provenance, debugging and
 live-provider cache isolation.
+
+### `GET /api/edl-roms`
+
+Lists supplemental EDL ROM archive links with `q`, `brand`, `product_model`,
+`region_code`, `sort=build|imported`, `limit` and `offset`. Responses include
+pagination metadata and `roms`.
+
+EDL items include brand, product model, optional device name, region, version
+name, build date, direct download URL, source and source update time. These
+links are displayed as archive links only; the API does not proxy, mirror or
+resolve ROM contents.
 
 ### `GET /api/scan/status`
 

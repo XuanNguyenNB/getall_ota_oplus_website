@@ -5,18 +5,27 @@ import csv
 import html as html_lib
 import re
 import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable
-from urllib.parse import urljoin, urlparse
+from typing import Any
+from urllib.parse import urlparse
+from uuid import uuid4
 
 import httpx
 
 from ota_backend.app import create_app
 from ota_backend.config import get_settings
-from ota_backend.domain.models import Brand, CatalogDeviceCandidate, OtaProviderRelease, OtaTrack
+from ota_backend.domain.models import (
+    Brand,
+    CatalogDeviceCandidate,
+    EdlRom,
+    OtaProviderRelease,
+    OtaTrack,
+    utc_now,
+)
 from ota_backend.domain.ota import (
     CATALOG_REGION_MANIFEST_MAP,
     derive_ota_model,
@@ -27,6 +36,7 @@ from ota_backend.domain.ota import (
 from ota_backend.repositories.interfaces import (
     CatalogImportRepository,
     DeviceRepository,
+    EdlRomRepository,
     ReleaseRepository,
 )
 
@@ -43,6 +53,7 @@ OPPO_CN_REALME_URL = "https://www.oppo.com/cn/realme/smartphones/"
 COLOROS_ROM_BRAND_LIST_URL = "https://www.coloros.com/api/colorOS/business/rom/brandList"
 COLOROS_ROM_PRODUCT_LIST_URL = "https://www.coloros.com/api/colorOS/business/rom/productList"
 LSCTOOL_OTA_DATA_URL = "https://ota.lsctool.online/data/ota_data.json"
+LSCTOOL_EDL_DATA_URL = "https://ota.lsctool.online/data/edl_data.json"
 LSCTOOL_DEVICE_DATA_URL = "https://ota.lsctool.online/data/device_data.json"
 LSCTOOL_DEFAULT_REGIONS_URL = "https://ota.lsctool.online/data/default_regions.txt"
 DOMESTIC_CN_SEED_PATH = Path(__file__).resolve().parents[2] / "data" / "domestic_cn_models.csv"
@@ -50,7 +61,17 @@ DOMESTIC_CN_MANIFEST_CODE = "97"
 DOMESTIC_CN_SOURCE = "domestic_cn"
 LSCTOOL_CN_CATALOG_SOURCE = "lsctool_cn_catalog"
 LSCTOOL_ARCHIVE_SOURCE = "lsctool_archive"
+LSCTOOL_EDL_SOURCE = "lsctool_edl"
 DOMESTIC_FETCH_WORKERS = 8
+CATALOG_SOURCE_PRIORITY = {
+    "domestic_cn_seed": 100,
+    LSCTOOL_CN_CATALOG_SOURCE: 90,
+    "oppo_cn_specs": 70,
+    "opposhop_cn": 60,
+    "coloros_rom": 50,
+    LSCTOOL_ARCHIVE_SOURCE: 30,
+    "oxygen_updater": 10,
+}
 
 P_MODEL_PATTERN = re.compile(r"\bP[A-Z0-9]{2,5}\d{2,3}\b")
 RMX_MODEL_PATTERN = re.compile(r"\bRMX\d{3,5}\b")
@@ -61,9 +82,7 @@ META_TITLE_PATTERN = re.compile(
 )
 HREF_PATTERN = re.compile(r"https?[^\"\\'<> ]+")
 SCRIPT_SRC_PATTERN = re.compile(r"<script[^>]+src=[\"']([^\"']+)", re.IGNORECASE)
-NETWORK_MODEL_FIELD_PATTERN = re.compile(
-    r"name:\"\u5165\u7f51\u578b\u53f7\",value:\[([^\]]+)\]"
-)
+NETWORK_MODEL_FIELD_PATTERN = re.compile(r"name:\"\u5165\u7f51\u578b\u53f7\",value:\[([^\]]+)\]")
 OTA_TRACK_PATTERN = re.compile(r"_11\.([ACFH])\.")
 VERSION_MAJOR_PATTERN = re.compile(r"^[A-Z0-9_+-]+_(\d{1,2})\.")
 LSCTOOL_TIMEZONE = timezone(timedelta(hours=7))
@@ -92,6 +111,13 @@ class DomesticCatalogFetch:
 class LsctoolArchiveFetch:
     devices: list[CatalogDeviceCandidate]
     releases: list[OtaProviderRelease]
+    skipped_count: int = 0
+    error_count: int = 0
+
+
+@dataclass(frozen=True)
+class LsctoolEdlFetch:
+    roms: list[EdlRom]
     skipped_count: int = 0
     error_count: int = 0
 
@@ -127,7 +153,7 @@ class CatalogImporter:
                         name=name or product_model,
                         product_model=product_model,
                         manifest_code=infer_manifest_code(product_model, name),
-                        scan_enabled=True,
+                        scan_enabled=False,
                         source="oxygen_updater",
                     )
             upserted_count = self._device_repository.upsert_catalog_devices(
@@ -272,15 +298,18 @@ class ReleaseArchiveImporter:
         for device in devices:
             if self._device_repository.get_by_product_model(device.product_model) is not None:
                 continue
-            is_cn_device = device.manifest_code == DOMESTIC_CN_MANIFEST_CODE
             self._device_repository.upsert_catalog_device(
                 catalog_id=None,
                 brand=device.brand,
                 name=device.name,
                 product_model=device.product_model,
                 manifest_code=device.manifest_code,
-                scan_enabled=is_cn_device,
-                source=LSCTOOL_CN_CATALOG_SOURCE if is_cn_device else LSCTOOL_ARCHIVE_SOURCE,
+                scan_enabled=False,
+                source=(
+                    LSCTOOL_CN_CATALOG_SOURCE
+                    if device.manifest_code == DOMESTIC_CN_MANIFEST_CODE
+                    else LSCTOOL_ARCHIVE_SOURCE
+                ),
             )
 
     def _route_archive_release(self, release: OtaProviderRelease) -> OtaProviderRelease:
@@ -298,11 +327,7 @@ class ReleaseArchiveImporter:
             if derive_ota_model(device.product_model) == base_model
             and device.manifest_code == release.manifest_code
         ]
-        exact = [
-            device
-            for device in compatible
-            if device.product_model == release.product_model
-        ]
+        exact = [device for device in compatible if device.product_model == release.product_model]
         candidates = exact or compatible
         if len(candidates) != 1:
             return release
@@ -323,6 +348,59 @@ class ReleaseArchiveImporter:
             )
 
 
+class EdlRomArchiveImporter:
+    def __init__(
+        self,
+        *,
+        edl_rom_repository: EdlRomRepository,
+        import_repository: CatalogImportRepository,
+    ) -> None:
+        self._edl_rom_repository = edl_rom_repository
+        self._import_repository = import_repository
+
+    def import_lsctool_edl(
+        self,
+        archive: LsctoolEdlFetch,
+        *,
+        dry_run: bool = False,
+    ) -> CatalogImportSummary:
+        if dry_run:
+            return CatalogImportSummary(
+                fetched_count=len(archive.roms),
+                upserted_count=0,
+                disabled_count=0,
+                skipped_count=archive.skipped_count,
+                error_count=archive.error_count,
+                dry_run=True,
+            )
+
+        run = self._import_repository.start_import(source=LSCTOOL_EDL_SOURCE)
+        try:
+            upserted_count = self._edl_rom_repository.upsert_edl_roms(archive.roms)
+        except Exception as exc:
+            self._import_repository.fail_import(
+                run.id,
+                fetched_count=len(archive.roms),
+                disabled_count=0,
+                error_message="LSCTOOL_EDL_UNAVAILABLE",
+            )
+            raise RuntimeError("LSCTOOL_EDL_UNAVAILABLE") from exc
+
+        self._import_repository.complete_import(
+            run.id,
+            fetched_count=len(archive.roms),
+            upserted_count=upserted_count,
+            disabled_count=0,
+        )
+        return CatalogImportSummary(
+            fetched_count=len(archive.roms),
+            upserted_count=upserted_count,
+            disabled_count=0,
+            skipped_count=archive.skipped_count,
+            error_count=archive.error_count,
+        )
+
+
 def fetch_oxygen_rows(*, timeout_seconds: float = 30) -> list[dict[str, Any]]:
     response = httpx.get(OXYGEN_DEVICES_URL, headers=OXYGEN_HEADERS, timeout=timeout_seconds)
     response.raise_for_status()
@@ -337,7 +415,7 @@ def fetch_domestic_cn_candidates(*, timeout_seconds: float = 30) -> DomesticCata
     skipped_count = 0
     error_count = 0
 
-    for fetcher in (
+    fetchers: tuple[Callable[[], DomesticCatalogFetch], ...] = (
         lambda: fetch_oppo_cn_specs_candidates(timeout_seconds=timeout_seconds),
         lambda: fetch_coloros_rom_candidates(timeout_seconds=timeout_seconds),
         lambda: fetch_opposhop_listing_candidates(
@@ -353,7 +431,8 @@ def fetch_domestic_cn_candidates(*, timeout_seconds: float = 30) -> DomesticCata
             timeout_seconds=timeout_seconds,
         ),
         lambda: fetch_lsctool_cn_catalog_candidates(timeout_seconds=timeout_seconds),
-    ):
+    )
+    for fetcher in fetchers:
         try:
             result = fetcher()
         except Exception:
@@ -365,6 +444,13 @@ def fetch_domestic_cn_candidates(*, timeout_seconds: float = 30) -> DomesticCata
 
     seed_candidates = load_domestic_cn_seed()
     candidates.extend(seed_candidates)
+    try:
+        candidates = _apply_lsctool_name_overrides(
+            candidates,
+            timeout_seconds=timeout_seconds,
+        )
+    except Exception:
+        error_count += 1
     deduped = _dedupe_candidates(candidates)
     if not deduped and error_count:
         raise RuntimeError("domestic CN catalog sources returned no usable models")
@@ -420,6 +506,44 @@ def parse_lsctool_cn_catalog(
         candidates=_dedupe_candidates(candidates),
         skipped_count=skipped_count,
     )
+
+
+def _apply_lsctool_name_overrides(
+    candidates: list[CatalogDeviceCandidate],
+    *,
+    timeout_seconds: float,
+) -> list[CatalogDeviceCandidate]:
+    product_models = {candidate.product_model.upper() for candidate in candidates}
+    if not product_models:
+        return candidates
+    with httpx.Client(headers=LSCTOOL_HEADERS, timeout=timeout_seconds) as client:
+        device_data = client.get(LSCTOOL_DEVICE_DATA_URL).raise_for_status().json()
+    if not isinstance(device_data, dict):
+        return candidates
+
+    updated: list[CatalogDeviceCandidate] = []
+    for candidate in candidates:
+        if candidate.source == "domestic_cn_seed":
+            updated.append(candidate)
+            continue
+        metadata = device_data.get(candidate.product_model.upper())
+        metadata = metadata if isinstance(metadata, dict) else {}
+        device_name = str(metadata.get("device_name") or "").strip()
+        if not device_name:
+            updated.append(candidate)
+            continue
+        brand = _infer_lsctool_brand(device_name, candidate.product_model)
+        if brand != candidate.brand:
+            updated.append(candidate)
+            continue
+        updated.append(
+            replace(
+                candidate,
+                name=_normalize_lsctool_cn_name(device_name, candidate.brand),
+                source=LSCTOOL_CN_CATALOG_SOURCE,
+            )
+        )
+    return updated
 
 
 def fetch_lsctool_archive(*, timeout_seconds: float = 30) -> LsctoolArchiveFetch:
@@ -546,6 +670,96 @@ def parse_lsctool_release_row(
     )
 
 
+def fetch_lsctool_edl(*, timeout_seconds: float = 30) -> LsctoolEdlFetch:
+    with httpx.Client(headers=LSCTOOL_HEADERS, timeout=timeout_seconds) as client:
+        edl_data = client.get(LSCTOOL_EDL_DATA_URL).raise_for_status().json()
+        device_data = client.get(LSCTOOL_DEVICE_DATA_URL).raise_for_status().json()
+    if not isinstance(edl_data, dict) or not isinstance(device_data, dict):
+        raise RuntimeError("invalid LSCTool EDL archive response")
+    return parse_lsctool_edl_archive(edl_data=edl_data, device_data=device_data)
+
+
+def parse_lsctool_edl_archive(
+    *,
+    edl_data: dict[str, Any],
+    device_data: dict[str, Any],
+) -> LsctoolEdlFetch:
+    roms: list[EdlRom] = []
+    skipped_count = 0
+    seen: set[tuple[str, str, str]] = set()
+
+    for raw_model, raw_rows in edl_data.items():
+        if not isinstance(raw_rows, list):
+            skipped_count += 1
+            continue
+        try:
+            product_model = normalize_product_model(str(raw_model))
+        except ValueError:
+            skipped_count += len(raw_rows)
+            continue
+        metadata = device_data.get(product_model)
+        metadata = metadata if isinstance(metadata, dict) else {}
+        device_name = str(metadata.get("device_name") or "").strip()
+        brand = _infer_lsctool_brand(device_name, product_model)
+        if brand is None:
+            skipped_count += len(raw_rows)
+            continue
+        normalized_name = _normalize_edl_device_name(device_name, brand)
+
+        for row in raw_rows:
+            if not isinstance(row, dict):
+                skipped_count += 1
+                continue
+            rom = parse_lsctool_edl_row(
+                row,
+                product_model=product_model,
+                brand=brand,
+                device_name=normalized_name,
+            )
+            if rom is None:
+                skipped_count += 1
+                continue
+            key = (rom.product_model, rom.version_name, rom.download_url)
+            if key in seen:
+                continue
+            seen.add(key)
+            roms.append(rom)
+
+    return LsctoolEdlFetch(roms=roms, skipped_count=skipped_count)
+
+
+def parse_lsctool_edl_row(
+    row: dict[str, Any],
+    *,
+    product_model: str,
+    brand: Brand,
+    device_name: str | None,
+) -> EdlRom | None:
+    row_model = str(row.get("model") or product_model).strip().upper()
+    if row_model and row_model != product_model:
+        return None
+    version_name = str(row.get("version_name") or "").strip()
+    download_url = str(row.get("link") or "").strip()
+    region_code = str(row.get("region") or "").strip().upper()
+    if not version_name or not download_url or not region_code:
+        return None
+    return EdlRom(
+        id=uuid4(),
+        brand=brand,
+        product_model=product_model,
+        device_name=device_name,
+        region_code=region_code,
+        version_name=version_name,
+        build_date=_parse_lsctool_compact_time(row.get("date")),
+        download_url=download_url,
+        source=LSCTOOL_EDL_SOURCE,
+        source_updated_at=_parse_lsctool_time(row.get("updated_at")),
+        raw_response={"source": LSCTOOL_EDL_SOURCE, "row": row},
+        created_at=utc_now(),
+        updated_at=utc_now(),
+    )
+
+
 def fetch_oppo_cn_specs_candidates(*, timeout_seconds: float = 30) -> DomesticCatalogFetch:
     sitemap = httpx.get(OPPO_CN_SITEMAP_URL, timeout=timeout_seconds).text
     urls = parse_oppo_cn_specs_urls(sitemap)
@@ -609,7 +823,10 @@ def fetch_opposhop_listing_candidates(
 
 
 def parse_oppo_cn_specs_urls(sitemap_xml: str) -> list[str]:
-    root = ET.fromstring(sitemap_xml)
+    # The sitemap is fetched from oppo.com over HTTPS and is treated as trusted
+    # vendor content. Parsing with stdlib ElementTree is sufficient here; we do
+    # not enable external entities or follow DTDs.
+    root = ET.fromstring(sitemap_xml)  # noqa: S314
     urls = [
         node.text.strip()
         for node in root.findall(".//{*}loc")
@@ -659,7 +876,9 @@ def parse_opposhop_product_urls(listing_html: str) -> list[str]:
     for raw_url in HREF_PATTERN.findall(listing_html):
         url = html_lib.unescape(raw_url)
         parsed = urlparse(url)
-        if parsed.netloc.endswith("opposhop.cn") and re.search(r"/cn/web/products/\d+\.html", parsed.path):
+        if parsed.netloc.endswith("opposhop.cn") and re.search(
+            r"/cn/web/products/\d+\.html", parsed.path
+        ):
             urls.append(url.split("#", 1)[0])
     return sorted(dict.fromkeys(urls))
 
@@ -723,7 +942,7 @@ def load_domestic_cn_seed(path: Path = DOMESTIC_CN_SEED_PATH) -> list[CatalogDev
                     name=name,
                     product_model=product_model,
                     source=source or "domestic_cn_seed",
-                    scan_enabled=_is_enabled(row.get("scan_enabled")),
+                    scan_enabled=False,
                 )
             )
         return candidates
@@ -750,10 +969,7 @@ def _fetch_product_pages(
     skipped_count = 0
     error_count = 0
     with ThreadPoolExecutor(max_workers=DOMESTIC_FETCH_WORKERS) as executor:
-        future_urls = {
-            executor.submit(_fetch_text, url, timeout_seconds): url
-            for url in urls
-        }
+        future_urls = {executor.submit(_fetch_text, url, timeout_seconds): url for url in urls}
         for future in as_completed(future_urls):
             url = future_urls[future]
             try:
@@ -783,7 +999,7 @@ def _domestic_candidate(
     name: str,
     product_model: str,
     source: str,
-    scan_enabled: bool = True,
+    scan_enabled: bool = False,
 ) -> CatalogDeviceCandidate:
     normalized = normalize_product_model(product_model)
     return CatalogDeviceCandidate(
@@ -800,8 +1016,17 @@ def _domestic_candidate(
 def _dedupe_candidates(candidates: list[CatalogDeviceCandidate]) -> list[CatalogDeviceCandidate]:
     deduped: dict[str, CatalogDeviceCandidate] = {}
     for candidate in candidates:
-        deduped.setdefault(candidate.product_model.upper(), candidate)
+        key = candidate.product_model.upper()
+        existing = deduped.get(key)
+        if existing is None or _catalog_source_priority(
+            candidate.source
+        ) > _catalog_source_priority(existing.source):
+            deduped[key] = candidate
     return list(deduped.values())
+
+
+def _catalog_source_priority(source: str) -> int:
+    return CATALOG_SOURCE_PRIORITY.get(source, 0)
 
 
 def parse_default_regions_text(raw_text: str) -> dict[str, str]:
@@ -867,6 +1092,14 @@ def _normalize_lsctool_cn_name(name: str, brand: Brand) -> str:
     return _normalize_domestic_name(f"realme {body}", brand)
 
 
+def _normalize_edl_device_name(name: str, brand: Brand) -> str | None:
+    if not name.strip():
+        return None
+    if "(CN)" in name.upper():
+        return _normalize_lsctool_cn_name(name, brand)
+    return _normalize_lsctool_device_name(name, brand)
+
+
 def _infer_archive_track(*values: str) -> OtaTrack | None:
     for value in values:
         match = OTA_TRACK_PATTERN.search(value or "")
@@ -887,11 +1120,24 @@ def _parse_lsctool_time(value: Any) -> datetime | None:
     if not raw:
         return None
     try:
-        return datetime.strptime(raw, "%Y-%m-%d %H:%M:%S").replace(
-            tzinfo=LSCTOOL_TIMEZONE
-        )
+        return datetime.strptime(raw, "%Y-%m-%d %H:%M:%S").replace(tzinfo=LSCTOOL_TIMEZONE)
     except ValueError:
         return None
+
+
+def _parse_lsctool_compact_time(value: Any) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    for width in (12, 14):
+        candidate = raw[:width]
+        try:
+            return datetime.strptime(
+                candidate, "%Y%m%d%H%M" if width == 12 else "%Y%m%d%H%M%S"
+            ).replace(tzinfo=LSCTOOL_TIMEZONE)
+        except ValueError:
+            continue
+    return None
 
 
 def _higher_track(current: OtaTrack | None, candidate: OtaTrack) -> OtaTrack:
@@ -948,7 +1194,9 @@ def _optional_int(value: Any) -> int | None:
 
 
 def _is_enabled(value: Any) -> bool:
-    return str(value).strip().lower() in {"1", "true", "yes"} if not isinstance(value, bool) else value
+    return (
+        str(value).strip().lower() in {"1", "true", "yes"} if not isinstance(value, bool) else value
+    )
 
 
 def _format_summary(command: str, summary: CatalogImportSummary) -> str:
@@ -974,6 +1222,7 @@ def main() -> None:
             "import-oxygen",
             "import-domestic-cn",
             "import-lsctool-archive",
+            "import-lsctool-edl",
             "import-all",
         ],
     )
@@ -985,29 +1234,45 @@ def main() -> None:
     args = parser.parse_args()
     settings = get_settings()
 
-    if args.command in {"import-domestic-cn", "import-lsctool-archive"} and args.dry_run:
+    if (
+        args.command in {"import-domestic-cn", "import-lsctool-archive", "import-lsctool-edl"}
+        and args.dry_run
+    ):
+        # Each branch fetches a different result shape; the local variable
+        # type is intentionally widened via individual statements so mypy can
+        # narrow per-branch rather than complaining about a unified type.
         if args.command == "import-domestic-cn":
-            fetched = fetch_domestic_cn_candidates(
+            domestic = fetch_domestic_cn_candidates(
                 timeout_seconds=settings.realme_ota_timeout_seconds
             )
-            fetched_count = len(fetched.candidates)
+            fetched_count = len(domestic.candidates)
+            skipped_count = domestic.skipped_count
+            error_count = domestic.error_count
+        elif args.command == "import-lsctool-archive":
+            archive = fetch_lsctool_archive(timeout_seconds=settings.realme_ota_timeout_seconds)
+            fetched_count = len(archive.releases)
+            skipped_count = archive.skipped_count
+            error_count = archive.error_count
         else:
-            fetched = fetch_lsctool_archive(
-                timeout_seconds=settings.realme_ota_timeout_seconds
-            )
-            fetched_count = len(fetched.releases)
+            edl = fetch_lsctool_edl(timeout_seconds=settings.realme_ota_timeout_seconds)
+            fetched_count = len(edl.roms)
+            skipped_count = edl.skipped_count
+            error_count = edl.error_count
         summary = CatalogImportSummary(
             fetched_count=fetched_count,
             upserted_count=0,
             disabled_count=0,
-            skipped_count=fetched.skipped_count,
-            error_count=fetched.error_count,
+            skipped_count=skipped_count,
+            error_count=error_count,
             dry_run=True,
         )
         print(_format_summary(args.command, summary))
         return
     if args.dry_run:
-        raise SystemExit("--dry-run is only supported for import-domestic-cn and import-lsctool-archive.")
+        raise SystemExit(
+            "--dry-run is only supported for import-domestic-cn, "
+            "import-lsctool-archive and import-lsctool-edl."
+        )
 
     _require_supabase(settings)
     app = create_app(settings=settings)
@@ -1040,6 +1305,15 @@ def main() -> None:
         )
         result = archive_importer.import_lsctool_archive(archive)
         print(_format_summary("import-lsctool-archive", result))
+
+    if args.command in {"import-lsctool-edl", "import-all"}:
+        edl_archive = fetch_lsctool_edl(timeout_seconds=settings.realme_ota_timeout_seconds)
+        edl_importer = EdlRomArchiveImporter(
+            edl_rom_repository=app.state.edl_rom_repository,
+            import_repository=app.state.catalog_import_repository,
+        )
+        result = edl_importer.import_lsctool_edl(edl_archive)
+        print(_format_summary("import-lsctool-edl", result))
 
 
 if __name__ == "__main__":

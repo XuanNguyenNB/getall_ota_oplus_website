@@ -8,7 +8,7 @@ offline automated proof.
 
 - A Supabase project created for smoke testing.
 - All migrations applied from `supabase/migrations/`, through
-  `202605270003_release_archive_metadata.sql`.
+  `202605270007_scan_eligibility.sql`.
 - `SUPABASE_URL` and `SUPABASE_SECRET_KEY` configured only on the server
   (`SUPABASE_SERVICE_ROLE_KEY` is a legacy fallback).
 - A private network boundary around the API service.
@@ -51,6 +51,8 @@ SUPABASE_URL=https://project-ref.supabase.co
 SUPABASE_SECRET_KEY=server-side-only
 RUI_CANDIDATES=8,7,6
 SCAN_REQUEST_INTERVAL_SECONDS=1
+TELEGRAM_COMMAND_CHAT_ID=7063171724
+TELEGRAM_WORKER_LOG_CHAT_ID=7063171724
 ```
 
 ## Supabase And Catalog Smoke
@@ -61,9 +63,12 @@ SCAN_REQUEST_INTERVAL_SECONDS=1
    coverage is required.
 4. Run `python -m ota_backend.catalog import-lsctool-archive` when historical
    per-device archive rows are required.
-5. Confirm rows exist in `devices` and one completed row exists in
+5. Run `python -m ota_backend.worker --cleanup-scan-eligibility --dry-run`,
+   then `python -m ota_backend.worker --cleanup-scan-eligibility` when the
+   preview matches expectations.
+6. Confirm rows exist in `devices` and one completed row exists in
    `device_catalog_imports`.
-6. Start FastAPI and confirm `GET /api/devices` returns catalog rows through
+7. Start FastAPI and confirm `GET /api/devices` returns catalog rows through
    the configured Supabase repository.
 
 ## OPlus Smoke
@@ -73,7 +78,10 @@ SCAN_REQUEST_INTERVAL_SECONDS=1
 2. Use a non-sensitive request without IMEI or GUID.
 3. Query one known model through `POST /api/ota` and confirm a row exists in
    `ota_releases`.
-4. Run `python -m ota_backend.worker --once --max-tasks 1` and confirm a row
+4. Enable one known model or group through Telegram `/scan on <model>` or by
+   temporarily setting both `scan_enabled=true` and
+   `scan_eligibility='active_scan'` for the smoke row, then run
+   `python -m ota_backend.worker --once --max-tasks 1` and confirm a row
    exists in `scan_runs` and `scan_tasks`. If a matching enabled
    `telegram_targets` row was seeded and a new release is found, confirm a
    queued `telegram_notifications` row.

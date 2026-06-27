@@ -1,0 +1,29 @@
+name: pip-audit
+
+on:
+  schedule:
+    # Weekly: Mondays at 06:00 UTC. The audit job surfaces vulnerable
+    # transitive deps in the GitHub UI without blocking merges (see
+    # continue-on-error below).
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install -e ".[dev]"
+      - name: Run pip-audit
+        # This is an alerting job, not a gating one. The failure mode for
+        # vulnerable deps should be: surface in the workflow run history,
+        # then a human files a fix. Use --strict so it counts skipped deps
+        # as failures, but continue-on-error to keep this advisory.
+        # If a CVE is known-unfixable for our usage, add an ignore here
+        # with a comment explaining why; today there are none.
+        continue-on-error: true
+        run: pip-audit --strict

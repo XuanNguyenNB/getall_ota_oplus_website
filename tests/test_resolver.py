@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import pytest
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from ota_backend.app import create_app
@@ -14,9 +14,17 @@ class HeadTransport:
     def __init__(self, responses: list[tuple[int, str | None]]) -> None:
         self.responses = list(responses)
         self.urls: list[str] = []
+        self.pinned_ips: list[str | None] = []
 
-    def head(self, url: str, *, timeout: float) -> tuple[int, str | None]:
+    def head(
+        self,
+        url: str,
+        *,
+        timeout: float,
+        pinned_ip: str | None = None,
+    ) -> tuple[int, str | None]:
         self.urls.append(url)
+        self.pinned_ips.append(pinned_ip)
         return self.responses.pop(0)
 
 
@@ -36,9 +44,7 @@ def test_resolver_applies_proven_component_hostname_transform_and_safe_redirect(
     transport = HeadTransport([(302, "/final.zip"), (200, None)])
     service = _service(repository, transport)
 
-    result = service.resolve(
-        "https://gauss-componentotacostmanual.allawnofs.com/path/update.zip"
-    )
+    result = service.resolve("https://gauss-componentotacostmanual.allawnofs.com/path/update.zip")
 
     assert "opexcostmanual" in transport.urls[0]
     assert result.resolved_url.endswith("/final.zip")
@@ -159,6 +165,68 @@ def test_resolver_blocks_non_global_resolution_without_storing_unvalidated_url()
     assert repository.requests[0].input_url is None
 
 
+def test_resolver_pins_validated_ip_and_resists_dns_rebind():
+    """DNS rebind defense: the IP returned at validation time is reused for
+    every hop's HTTP fetch (passed as ``pinned_ip`` to the transport), so a
+    later rebind to a private/internal address cannot redirect the request.
+    The resolver must also resolve each hostname exactly once per resolve()
+    call."""
+
+    repository = InMemoryResolverRepository()
+    transport = HeadTransport([(200, None)])
+
+    resolved: list[str] = []
+    addresses_seq = iter([["8.8.8.8"], ["127.0.0.1"]])
+
+    def rebind_dns(hostname: str) -> list[str]:
+        resolved.append(hostname)
+        try:
+            return next(addresses_seq)
+        except StopIteration:
+            return ["127.0.0.1"]
+
+    service = ResolverService(
+        repository=repository,
+        allowed_suffixes=("allawnfs.com",),
+        timeout_seconds=5,
+        max_redirects=1,
+        transport=transport,
+        dns_resolver=rebind_dns,
+    )
+
+    result = service.resolve("https://gauss-componentotacostmanual-cn.allawnfs.com/file.zip")
+
+    assert result.resolved_url.startswith("https://gauss-componentotacostmanual-cn.")
+    assert transport.pinned_ips == ["8.8.8.8"]
+    # Host resolved once at validation, never re-queried later in the same
+    # resolve() call: a rebinding upstream resolver cannot leak through.
+    assert resolved.count("gauss-componentotacostmanual-cn.allawnfs.com") == 1
+
+
+def test_resolver_blocks_when_initial_dns_lookup_returns_private_ip_even_if_later_global():
+    """Even on the very first hop, a private IP must block the request before
+    the transport ever sees it. The pinned-IP transport never gets a chance
+    to fetch."""
+
+    repository = InMemoryResolverRepository()
+    transport = HeadTransport([(200, None)])
+    service = ResolverService(
+        repository=repository,
+        allowed_suffixes=("allawnfs.com",),
+        timeout_seconds=5,
+        max_redirects=1,
+        transport=transport,
+        dns_resolver=lambda _host: ["10.0.0.5"],
+    )
+
+    with pytest.raises(ResolverError) as error:
+        service.resolve("https://safe.allawnfs.com/file.zip")
+
+    assert error.value.code == "RESOLVE_BLOCKED_HOST"
+    # Transport was never invoked because validation failed first.
+    assert transport.pinned_ips == []
+
+
 def test_downloadcheck_transport_sends_oplus_metadata_headers(monkeypatch):
     seen_headers: dict[str, str] = {}
 
@@ -169,9 +237,7 @@ def test_downloadcheck_transport_sends_oplus_metadata_headers(monkeypatch):
         assert timeout == 5
         return httpx.Response(
             302,
-            headers={
-                "location": "https://gauss-compota-c-cn.allawnfs.com/component-ota/file.zip"
-            },
+            headers={"location": "https://gauss-compota-c-cn.allawnfs.com/component-ota/file.zip"},
         )
 
     monkeypatch.setattr("ota_backend.services.resolver.httpx.get", fake_get)

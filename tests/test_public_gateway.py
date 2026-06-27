@@ -76,9 +76,7 @@ def test_public_ota_requires_turnstile_and_rejects_sensitive_query_inputs():
 
     payload = _payload()
     payload["imei0"] = "sensitive"
-    rejected = client.post(
-        "/api/ota", json=payload, headers={"X-Turnstile-Token": "valid-token"}
-    )
+    rejected = client.post("/api/ota", json=payload, headers={"X-Turnstile-Token": "valid-token"})
     assert rejected.status_code == 400
     assert rejected.json()["error"]["code"] == "VALIDATION_ERROR"
 

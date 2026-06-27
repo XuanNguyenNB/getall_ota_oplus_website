@@ -6,14 +6,15 @@ Do not run this checklist until private live activation has completed.
 
 1. Rotate all previously exposed Supabase elevated keys.
 2. Apply all migration files through
-   `202605270003_release_archive_metadata.sql`.
+   `202605270007_scan_eligibility.sql`.
 3. Create a Supabase Auth operator and insert its UUID into `admin_users`.
 4. Configure server-only `.env` values for production runtime, Turnstile and
    Tunnel. Use `ENVIRONMENT=production`, Supabase live persistence and the
    realme live provider.
 5. Keep `ENABLE_RESOLVER=false` until resolver proof below passes.
 6. Leave Telegram settings empty unless the optional bot profile is being
-   activated.
+   activated; otherwise set `TELEGRAM_COMMAND_CHAT_ID`,
+   `TELEGRAM_WORKER_LOG_CHAT_ID`, and the `telegram_targets` rows.
 
 ## Gateway Smoke
 
@@ -30,18 +31,24 @@ Do not run this checklist until private live activation has completed.
 
 ## Worker Smoke
 
-1. Run `docker compose --profile jobs run --rm worker python -m ota_backend.worker --once --max-tasks 1`.
-2. Confirm `scan_runs` and `scan_tasks` rows are written.
-3. Install and enable `deploy/systemd/ota-worker.timer` only after the bounded
+1. Run `docker compose --profile jobs run --rm worker python -m ota_backend.worker --cleanup-scan-eligibility --dry-run`.
+2. Run `docker compose --profile jobs run --rm worker python -m ota_backend.worker --cleanup-scan-eligibility`.
+3. Run `docker compose --profile jobs run --rm worker python -m ota_backend.worker --once --max-tasks 1`.
+4. If no task is created, enable one known variant or group through Telegram
+   `/scan on <model>` or `/scan on-group <scan_group_key>` and rerun the
+   bounded smoke.
+5. Confirm `scan_runs` and `scan_tasks` rows are written.
+6. Install and enable `deploy/systemd/ota-worker.timer` only after the bounded
    run completes.
 
 ## Telegram Smoke
 
-1. Seed enabled target topics in `telegram_targets`.
+1. Seed enabled target topics or channels in `telegram_targets`.
 2. Generate one controlled queued notification.
-3. Run `docker compose --profile bot run --rm bot python -m ota_backend.telegram_bot --once-delivery`.
-4. Confirm the correct topic receives one message and the row becomes `sent`.
-5. Start continuous polling with `docker compose --profile bot up -d bot`.
+3. Run `docker compose --profile bot run --rm bot python -m ota_backend.telegram_bot --check-config`.
+4. Run `docker compose --profile bot run --rm bot python -m ota_backend.telegram_bot --once-delivery`.
+5. Confirm the correct topic/channel receives one message and the row becomes `sent`.
+6. Start continuous polling with `docker compose --profile bot up -d bot`.
 
 ## Resolver Proof Gate
 

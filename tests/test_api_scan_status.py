@@ -1,9 +1,9 @@
 from fastapi.testclient import TestClient
 
 from ota_backend.app import create_app
+from ota_backend.domain.scanner import stable_group_scan_shard
 from ota_backend.repositories.memory import InMemoryDeviceRepository
 from ota_backend.services.scanner import ScannerService
-from ota_backend.domain.scanner import stable_scan_shard
 
 
 def test_scan_status_returns_empty_state():
@@ -26,7 +26,7 @@ def test_scan_status_returns_latest_run_shape():
         provider=app.state.ota_provider,
     )
     assert device is not None
-    service.run_scheduled_scan(cycle_day=stable_scan_shard(device.product_model))
+    service.run_scheduled_scan(cycle_day=stable_group_scan_shard(device))
     client = TestClient(app)
 
     response = client.get("/api/scan/status")

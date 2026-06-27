@@ -11,17 +11,19 @@ from fastapi import Request
 from ota_backend.api.errors import ApiError
 from ota_backend.config import Settings
 from ota_backend.domain.models import OtaTrack, Release, utc_now
-from ota_backend.repositories.interfaces import AdminRepository, PublicActionRepository, ReleaseRepository
+from ota_backend.repositories.interfaces import (
+    AdminRepository,
+    PublicActionRepository,
+    ReleaseRepository,
+)
 
 
 class ChallengeVerifier(Protocol):
-    def verify(self, *, token: str, remote_ip: str | None, action: str) -> bool:
-        ...
+    def verify(self, *, token: str, remote_ip: str | None, action: str) -> bool: ...
 
 
 class AdminAuthorizer(Protocol):
-    def require_admin(self, authorization: str | None) -> UUID:
-        ...
+    def require_admin(self, authorization: str | None) -> UUID: ...
 
 
 class TurnstileChallengeVerifier:
@@ -43,11 +45,10 @@ class TurnstileChallengeVerifier:
         except (httpx.HTTPError, ValueError):
             return False
         validated_action = result.get("action")
-        return bool(result.get("success")) and (
-            validated_action in {None, "", action}
-        ) and (
-            not self._expected_hostname
-            or result.get("hostname") == self._expected_hostname
+        return (
+            bool(result.get("success"))
+            and (validated_action in {None, "", action})
+            and (not self._expected_hostname or result.get("hostname") == self._expected_hostname)
         )
 
 
@@ -76,9 +77,7 @@ class DenyAdminAuthorizer:
         raise ApiError(401, "AUTH_REQUIRED", "Admin authentication is required.")
 
 
-def require_public_challenge(
-    request: Request, *, verifier: ChallengeVerifier, action: str
-) -> None:
+def require_public_challenge(request: Request, *, verifier: ChallengeVerifier, action: str) -> None:
     token = request.headers.get("X-Turnstile-Token", "").strip()
     if not token or not verifier.verify(
         token=token,
@@ -95,7 +94,7 @@ def actor_hash(request: Request, settings: Settings) -> str:
     address = request.headers.get("CF-Connecting-IP")
     if not address:
         address = request.client.host if request.client else "unknown"
-    value = f"{settings.public_rate_limit_salt}:{address}".encode("utf-8")
+    value = f"{settings.public_rate_limit_salt}:{address}".encode()
     return hashlib.sha256(value).hexdigest()
 
 
@@ -116,6 +115,21 @@ def ota_query_key(
             language.strip().lower(),
         )
     )
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def resolve_query_key(url: str) -> str:
+    """Stable per-URL key for resolver rate limiting.
+
+    Previously the resolve route reused ``ota_query_key`` with sentinel
+    placeholder fields, which made the dependency hard to reason about
+    and silently coupled resolve rate-limit shape to ota_query_key's
+    internal serialization. This helper keeps the namespace separate by
+    prefixing with ``resolve|`` so the two surfaces cannot ever collide
+    across an upgrade.
+    """
+
+    normalized = "resolve|" + url.strip()
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
@@ -163,6 +177,13 @@ def find_cached_ota_release(
 ) -> Release | None:
     if ttl_seconds <= 0:
         return None
+    cutoff = utc_now() - timedelta(seconds=ttl_seconds)
+    # Push the freshness cutoff and source filter into the SQL query so the
+    # public cache lookup is a bounded point-read rather than a page-then-
+    # filter dance in Python. The remaining track/rui_version filtering is
+    # cheap and stays in Python because there are at most a handful of
+    # candidate releases per (product_model, manifest_code) within the
+    # 30-minute TTL window.
     page = repository.list_releases(
         q=None,
         brand=None,
@@ -171,15 +192,13 @@ def find_cached_ota_release(
         source="live_provider",
         limit=20,
         offset=0,
+        last_seen_since=cutoff,
     )
-    cutoff = utc_now() - timedelta(seconds=ttl_seconds)
     return next(
         (
             release
             for release in page.items
-            if release.ota_track == ota_track
-            and release.rui_version in rui_candidates
-            and release.last_seen_at >= cutoff
+            if release.ota_track == ota_track and release.rui_version in rui_candidates
         ),
         None,
     )

@@ -11,7 +11,9 @@ The continuation initiative is also implemented at local/code-artifact level:
 - public Turnstile, quota/cooldown/cache and admin authorization paths;
 - Telegram delivery bot and queue RPC artifacts;
 - resolver service and HTTP surface protected by an explicit live-proof gate;
-- Docker/Cloudflare Tunnel/timer/CI deployment artifacts.
+- Docker/Cloudflare Tunnel/timer/CI deployment artifacts;
+- scan eligibility metadata, group-aware sharding and failure suppression for
+  smarter unattended OTA crawling.
 
 Private activation has proven catalog import and live release persistence.
 Operator-applied scanner recovery and full manifest-map migrations have been
@@ -23,7 +25,7 @@ checks pass.
 
 - Rotate exposed Supabase elevated keys.
 - Confirm the operator-applied migrations through
-  `202605270003_release_archive_metadata.sql` are present in the target project.
+  `202605270007_scan_eligibility.sql` are present in the target project.
 - Configure Supabase and `realme-ota` server runtime.
 - Import Oxygen catalog and run one bounded manual query and worker scan.
 - Import China domestic catalog rows with `python -m ota_backend.catalog
@@ -32,6 +34,11 @@ checks pass.
 - Import third-party historical per-device OTA archive rows with
   `python -m ota_backend.catalog import-lsctool-archive` after applying the
   release archive metadata migration.
+- Import third-party EDL ROM archive rows with
+  `python -m ota_backend.catalog import-lsctool-edl` after applying the EDL
+  archive migration.
+- Enable selected auto-scan device groups through Telegram `/scan` commands;
+  catalog import no longer turns every imported model into a live scan task.
 - Verify database records before running any unattended or public traffic.
 
 ## Phase B: Public Controlled Gateway
@@ -94,7 +101,11 @@ manifest subset; after the operator applied
 `202605270001_scanner_rpc_recovery.sql` and
 `202605270002_full_manifest_map.sql`, bounded worker runs completed and Phase A
 private activation evidence is recorded. The release archive migration
-`202605270003_release_archive_metadata.sql` and LSCTool import provide
-multi-release archive rows while keeping source provenance internal. Telegram
-sends, Cloudflare deployment and resolver live proof remain
+`202605270003_release_archive_metadata.sql`, EDL archive migration
+`202605270004_edl_rom_archive.sql`, smart scan grouping migration
+`202605270005_smart_scan_groups.sql`, nullable Telegram target topic migration
+`202605270006_nullable_telegram_target_topics.sql`, scan eligibility migration
+`202605270007_scan_eligibility.sql`, and LSCTool imports provide multi-release
+OTA rows plus separate EDL ROM archive links while keeping source provenance
+internal. Telegram sends, Cloudflare deployment and resolver live proof remain
 operator-controlled checks.

@@ -102,7 +102,7 @@ def normalize_track(value: str) -> OtaTrack:
     track = value.strip().upper()
     if track not in SUPPORTED_TRACKS:
         raise ValueError("unsupported OTA track")
-    return track  # type: ignore[return-value]
+    return track
 
 
 def normalize_rui_candidates(value: list[int] | None) -> list[int]:

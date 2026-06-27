@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from ota_backend.domain.manifest import normalize_manifest_code
 from ota_backend.domain.models import OtaQuery, PersistedRelease, Release
-from ota_backend.domain.ota import infer_brand, normalize_product_model, normalize_rui_candidates, normalize_track
+from ota_backend.domain.ota import (
+    infer_brand,
+    normalize_product_model,
+    normalize_rui_candidates,
+    normalize_track,
+)
 from ota_backend.providers.interfaces import (
     OtaNotFoundError,
     OtaProvider,
@@ -50,7 +55,8 @@ class OtaQueryService:
                 imei0=request.imei0,
                 imei1=request.imei1,
                 persist_result=request.persist_result,
-                brand=request.brand or (device.brand if device else infer_brand(None, product_model)),
+                brand=request.brand
+                or (device.brand if device else infer_brand(None, product_model)),
             )
         except ValueError as exc:
             raise OtaServiceError("VALIDATION_ERROR", str(exc)) from exc
@@ -72,6 +78,4 @@ class OtaQueryService:
                 is_new=False,
             )
 
-        return self._release_repository.upsert_release(
-            provider_release, discovered_by="manual"
-        )
+        return self._release_repository.upsert_release(provider_release, discovered_by="manual")

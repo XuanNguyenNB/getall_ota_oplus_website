@@ -23,6 +23,28 @@ constraints to the full Universal OTA table and backfills known catalog
 suffixes without changing manual overrides.
 `202605270003_release_archive_metadata.sql` adds release archive metadata and
 extends the release upsert RPC for LSCTool archive imports.
+`202605270004_edl_rom_archive.sql` adds a separate EDL ROM archive table for
+direct ROM package links. `202605270005_smart_scan_groups.sql` separates
+catalog visibility from unattended scan eligibility and adds scan group
+metadata for Telegram-managed auto scan allowlists.
+`202605270007_scan_eligibility.sql` adds explicit scan lifecycle state and
+failure metadata used by the smarter scheduler.
+`202606270001_scan_eligibility_index.sql` adds two partial indexes on
+`devices` (keyed on `name` and `scan_group_key`) that match the
+`scan_enabled = true AND scan_eligibility = 'active_scan' AND
+manifest_code IS NOT NULL` predicate. The supabase repository pushes that
+predicate to SQL, so this index makes the active-scan slice O(matches)
+instead of O(catalog_size) and gives the cycle-day shard scan a btree seek
+instead of a sequential scan.
+`202606270002_scan_run_counters_recompute.sql` makes
+`scan_runs.new_releases` idempotent. It adds `scan_tasks.found_new_release`,
+backfills it conservatively from existing completed rows, recomputes
+`scan_runs.new_releases` from that column, and rewrites
+`complete_scan_task` to recompute the run-level counter from task state on
+every completion. Replaying a completion (e.g. operator-triggered retry)
+now produces the same final counter value. The previous body of
+`complete_scan_task` is preserved in `docs/OPERATIONS/rollback.md` so a
+rollback can restore it byte-for-byte.
 
 ## devices
 
@@ -36,7 +58,16 @@ Important columns:
 - `name`: display name.
 - `product_model`: OPlus product model, for example `RMX3301` or `CPH2841TH`.
 - `manifest_code`: manifest code, for example `1B`, `39`, `A7`, `97`.
-- `scan_enabled`: boolean.
+- `catalog_visible`: boolean; visible/searchable in the public catalog.
+- `scan_enabled`: boolean; eligible for unattended worker live scans.
+- `scan_eligibility`: `active_scan`, `archive_only`, or `invalid_for_scan`.
+- `consecutive_failures`: repeated scan failure counter used to suppress
+  broken legacy rows.
+- `last_scan_error_code`, `last_scan_error_message`, `last_scan_failed_at`:
+  sanitized last failure metadata for observability.
+- `scan_group_key`: stable group key for Telegram commands, for example
+  `oppo-find-x8`.
+- `scan_group_name`: display group, for example `OPPO Find X8`.
 - `active_track`: current preferred track, one of `A`, `C`, `F`, `H`.
 - `bootstrap_done`: boolean.
 - `manual_override`: boolean.
@@ -49,6 +80,15 @@ Constraints:
 - unique `product_model`.
 - `brand` must be one of the supported brands.
 - `active_track` must be one of the supported tracks.
+
+Catalog importers keep devices searchable but do not automatically opt new
+rows into `scan_enabled=true`; operators enable groups or variants through
+Telegram admin commands.
+
+Scheduled workers require both `scan_enabled=true` and
+`scan_eligibility='active_scan'`. Rows missing manifest codes are migrated to
+`invalid_for_scan`; rows intentionally kept for archive browsing remain
+`archive_only`.
 
 ## ota_releases
 
@@ -87,6 +127,29 @@ Important columns:
 Constraints:
 
 - unique release key on `product_model`, `manifest_code`, `real_ota_version`, and `download_url`.
+
+## edl_roms
+
+Stores third-party supplemental EDL ROM archive links separately from OTA
+release rows.
+
+Important columns:
+
+- `id`: UUID primary key.
+- `brand`: `oppo`, `realme`, or `oneplus`.
+- `product_model`: device model, for example `PKB110` or `RMX3800`.
+- `device_name`: optional display name from the source catalog.
+- `region_code`: source region label, for example `CN`.
+- `version_name`: source ROM version label.
+- `build_date`: timestamp parsed from the source build date when available.
+- `download_url`: direct ZIP link as supplied by the archive source.
+- `source`: currently `lsctool_edl`.
+- `source_updated_at`: timestamp from the source archive when available.
+- `raw_response`: sanitized raw source row for audit/debugging.
+
+Constraints:
+
+- unique EDL key on `product_model`, `version_name`, and `download_url`.
 
 ## scan_runs
 
@@ -219,9 +282,16 @@ Important columns:
 
 - `devices(brand)`
 - `devices(product_model)`
+- `devices(catalog_visible)`
 - `devices(scan_enabled)`
+- `devices(scan_eligibility, scan_enabled)`
+- `devices(scan_group_key)`
+- `devices(scan_group_key, scan_eligibility, scan_enabled)`
+- `devices(name) WHERE scan_enabled AND scan_eligibility='active_scan' AND manifest_code IS NOT NULL` (partial; phase-2)
+- `devices(scan_group_key) WHERE scan_enabled AND scan_eligibility='active_scan' AND manifest_code IS NOT NULL` (partial; phase-2)
 - `ota_releases(brand, discovered_at desc)`
 - `ota_releases(product_model, discovered_at desc)`
+- `edl_roms(product_model, build_date desc)`
 - `scan_tasks(status)`
 - `telegram_notifications(status)`
 - `resolve_requests(created_at desc)`

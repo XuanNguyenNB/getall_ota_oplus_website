@@ -10,11 +10,13 @@ executions do not overlap.
 
 ## Scan Cadence
 
-The enabled catalog is scanned over a 7-day cycle.
+The enabled scan allowlist is scanned over a configurable cycle. The default
+is still 7 days, but deployments that keep a small manual allowlist can set
+`SCAN_CYCLE_DAYS=1` to scan every enabled variant once per day.
 
 Each day:
 
-- select one stable shard of enabled devices
+- select one stable shard of `scan_eligibility=active_scan` device groups
 - create scan tasks for that shard
 - process tasks with limited concurrency
 - store discovered releases
@@ -22,17 +24,65 @@ Each day:
 
 This avoids running one very large scan job and reduces upstream pressure.
 
+The VPS timer runs one shard per day. The public searchable catalog can be much
+larger than the live scan allowlist because `catalog_visible=true` and
+`scan_enabled=true` are separate fields. Importing catalog/archive data does
+not automatically enable live scans; operators use Telegram `/scan` commands
+to enable only selected device groups or variants.
+
+## Scan Eligibility
+
+Catalog/archive visibility is separate from unattended live scanning.
+
+Device scan states:
+
+- `active_scan`: eligible for scheduled live OTA crawling.
+- `archive_only`: visible on the website, but not crawled automatically.
+- `invalid_for_scan`: visible only when useful, but missing scan-critical data
+  such as manifest code.
+
+The worker ignores rows without a manifest, rows outside `active_scan`, and
+rows whose consecutive failure counter has reached the configured archive
+threshold. Telegram `/scan on ...` can re-enable a model and reset its failure
+counter when an operator wants to retry it.
+
 ## Sharding Strategy
 
-Use a stable hash of `product_model`.
+Use a stable hash of `scan_group_key`, falling back to `product_model` only
+when grouping metadata is absent.
 
 Example:
 
 ```text
-cycle_day = sha256(upper(product_model)) % 7
+cycle_day = sha256(upper(scan_group_key)) % SCAN_CYCLE_DAYS
 ```
 
-On each day, scan devices where `cycle_day` equals the current cycle day.
+On each run, scan all active variants in groups where `cycle_day` equals the
+current cycle day. This keeps regional variants of the same device family
+together, for example China, global, India and Thailand variants of one Find
+X8 generation. `SCAN_MAX_TASKS_PER_RUN` can cap the run for bounded smoke
+checks, but production runs should leave it unset or high enough to avoid
+splitting a group unnecessarily.
+
+## Telegram Scan Allowlist
+
+The bot exposes admin-only controls for the worker allowlist:
+
+```text
+/scan search <query>
+/scan on-group <scan_group_key>
+/scan off-group <scan_group_key>
+/scan on <model...>
+/scan off <model...>
+/scan list on [oppo|realme|oneplus]
+/scan off-all CONFIRM
+```
+
+Groups are derived from normalized device names. Region suffixes such as
+`(CN)`, `(IN)`, `(EU)` and `(GLO)` are removed, so variants like `PKB110`,
+`CPH2651`, `CPH2651IN` and `CPH2651TH` can be managed under `OPPO Find X8`.
+Model tiers remain separate: `Find X8`, `Find X8 Pro` and `Find X8 Ultra` are
+different groups.
 
 Advantages:
 
@@ -109,10 +159,26 @@ If all candidates fail:
 Default:
 
 ```text
-SCAN_MAX_CONCURRENCY=3
+SCAN_MAX_CONCURRENCY=1
+SCAN_CYCLE_DAYS=7
+SCAN_MAX_TASKS_PER_RUN=
 ```
 
-Keep concurrency conservative because OPlus endpoints can rate limit or fail under load.
+`SCAN_MAX_CONCURRENCY` controls how many scan tasks the worker drives in
+parallel within a single run. The default is `1` (fully serial) because OPlus
+endpoints throttle aggressive callers; operators who have validated higher
+fan-out against a live shard can raise this value (range 1-20). Each in-flight
+task still respects `SCAN_REQUEST_INTERVAL_SECONDS` between live-provider
+calls.
+
+`SCAN_MAX_TASKS_PER_RUN` is optional; leave it unset for the full selected
+shard or set a positive integer as an operational safety cap.
+
+Rollback guidance: if a higher concurrency setting causes upstream
+rate-limiting or run-level failure-rate breach, set `SCAN_MAX_CONCURRENCY=1`
+and restart the timer. The setting is read at worker start, so no migration
+or data fix is required. See `docs/OPERATIONS/rollback.md` for the full
+procedure.
 
 ## Task States
 
@@ -130,7 +196,8 @@ The worker should claim queued tasks atomically so two worker instances do not p
 
 Recommended:
 
-- retry transient network errors up to 2 times
+- retry timeout once inside the same task before marking the attempt failed
+- retry queued task attempts through the existing task retry mechanism
 - do not retry validation errors
 - retry Telegram notification failures separately from OTA scan tasks
 
@@ -177,4 +244,22 @@ with:
 
 ```text
 python -m ota_backend.worker --once --scan-run-id <uuid>
+```
+
+## Telegram Worker Logs
+
+When `TELEGRAM_WORKER_LOGS_ENABLED=true`, the worker sends one Telegram summary
+after each run. The summary includes run ID, status, cycle day, start/finish
+time, completed/failed counts, no-update count, scan-capable coverage and the
+number of new releases. Low task failure rates complete the run with a warning
+instead of marking the whole batch failed. The summary lists up to
+`TELEGRAM_WORKER_LOG_RELEASE_LIMIT` new releases and the top failed models from
+that run. It is sent to the worker-log chat, which may be the same as the
+command chat during simple deployments.
+
+The worker does not send per-task logs because a full shard can include many
+hundreds of models. Detailed operational logs remain in systemd:
+
+```text
+sudo journalctl -u ota-worker.service -f
 ```

@@ -1,3 +1,5 @@
+import pytest
+
 from ota_backend.domain.manifest import (
     ACCEPTED_MANIFEST_CODES,
     AUTHORITATIVE_MANIFEST_TARGETS,
@@ -5,8 +7,6 @@ from ota_backend.domain.manifest import (
     live_manifest_map_complete,
     manifest_blockers,
 )
-import pytest
-
 from ota_backend.domain.ota import build_seed_ota_version, derive_ota_model, infer_manifest_code
 
 
@@ -92,9 +92,7 @@ def test_catalog_region_label_infers_manifest_for_models_without_suffix(name, ma
 
 def test_seed_ota_version_uses_base_model_and_track():
     assert derive_ota_model("CPH2805IN") == "CPH2805"
-    assert build_seed_ota_version("CPH2805IN", "H") == (
-        "CPH2805_11.H.00_0000_000000000000"
-    )
+    assert build_seed_ota_version("CPH2805IN", "H") == ("CPH2805_11.H.00_0000_000000000000")
 
 
 @pytest.mark.parametrize(

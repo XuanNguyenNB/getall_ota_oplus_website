@@ -2,16 +2,20 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from importlib import import_module
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
 from ota_backend.config import Settings
-from ota_backend.domain.manifest import get_authoritative_manifest_target, live_manifest_map_complete
+from ota_backend.domain.manifest import (
+    get_authoritative_manifest_target,
+    live_manifest_map_complete,
+)
 from ota_backend.domain.models import OtaProviderRelease, OtaQuery, OtaTrack
 from ota_backend.domain.ota import build_seed_ota_version, derive_ota_model, infer_brand
 from ota_backend.providers.interfaces import (
@@ -21,7 +25,6 @@ from ota_backend.providers.interfaces import (
     OtaProviderTimeoutError,
     OtaProviderUnavailableError,
 )
-
 
 # Region-specific upstream model suffixes. Some catalog models only return an
 # OTA when queried with a region-suffixed variant under the matching manifest
@@ -105,6 +108,9 @@ class RealmeOtaProvider(OtaProvider):
         server_region: int,
         region_label: str,
     ) -> OtaProviderRelease:
+        # query() guarantees this is set, but mypy needs the narrowing here.
+        if self._request_cls is None:  # pragma: no cover - defensive guard
+            raise OtaProviderUnavailableError("realme-ota is not importable in this environment")
         last_validation_error: Exception | None = None
         found_no_release = False
         for upstream_model in _upstream_product_models(
@@ -282,7 +288,7 @@ def _upstream_product_models(
     return tuple(dict.fromkeys(candidates))
 
 
-def _walk(value: Any):
+def _walk(value: Any) -> Iterator[tuple[Any, Any]]:
     if isinstance(value, dict):
         for key, child in value.items():
             yield key, child
@@ -379,14 +385,14 @@ def _infer_published_at(
         if match:
             year, month, day = (int(part) for part in match.groups())
             try:
-                return datetime(2000 + year, month, day, tzinfo=timezone.utc)
+                return datetime(2000 + year, month, day, tzinfo=UTC)
             except ValueError:
                 pass
     match = OTA_TIMESTAMP_PATTERN.search(real_ota_version)
     if not match:
         return None
     try:
-        return datetime.strptime(match.group(1), "%Y%m%d%H%M").replace(tzinfo=timezone.utc)
+        return datetime.strptime(match.group(1), "%Y%m%d%H%M").replace(tzinfo=UTC)
     except ValueError:
         return None
 
@@ -395,9 +401,7 @@ def _normalize_download_url(value: str) -> str:
     parsed = urlsplit(value)
     hostname = parsed.hostname or ""
     if hostname.startswith(OPLUS_CN_COST_AUTO_PREFIX):
-        hostname = OPLUS_CN_COST_MANUAL_PREFIX + hostname.removeprefix(
-            OPLUS_CN_COST_AUTO_PREFIX
-        )
+        hostname = OPLUS_CN_COST_MANUAL_PREFIX + hostname.removeprefix(OPLUS_CN_COST_AUTO_PREFIX)
     elif not hostname.startswith(OPLUS_CN_COST_MANUAL_PREFIX):
         hostname = hostname.replace("componentotacostmanual", "opexcostmanual")
     netloc = hostname + (f":{parsed.port}" if parsed.port else "")
@@ -407,5 +411,7 @@ def _normalize_download_url(value: str) -> str:
 def _computed_ota_version(product_model: str, region_label: str, real_ota_version: str) -> str:
     match = re.search(r"_11\.([A-Z]\.[0-9]+).*_([0-9]{12})$", real_ota_version)
     if match:
-        return f"{derive_ota_model(product_model)}_11.{match.group(1)}_{region_label}_{match.group(2)}"
+        return (
+            f"{derive_ota_model(product_model)}_11.{match.group(1)}_{region_label}_{match.group(2)}"
+        )
     return f"{product_model}_{region_label}_{real_ota_version}"

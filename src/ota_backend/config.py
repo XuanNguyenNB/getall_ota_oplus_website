@@ -6,9 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=".env", extra="ignore", populate_by_name=True
-    )
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", populate_by_name=True)
 
     service_name: str = "getall_ota_oplus_website"
     version: str = "0.1.0"
@@ -23,11 +21,19 @@ class Settings(BaseSettings):
 
     supabase_url: str | None = Field(default=None, alias="SUPABASE_URL")
     supabase_secret_key: str | None = Field(default=None, alias="SUPABASE_SECRET_KEY")
-    supabase_service_role_key: str | None = Field(
-        default=None, alias="SUPABASE_SERVICE_ROLE_KEY"
-    )
-    scan_max_concurrency: int = Field(default=3, ge=1, le=20)
+    supabase_service_role_key: str | None = Field(default=None, alias="SUPABASE_SERVICE_ROLE_KEY")
+    supabase_anon_key: str | None = Field(default=None, alias="SUPABASE_ANON_KEY")
+    scan_max_concurrency: int = Field(default=1, ge=1, le=20)
+    scan_cycle_days: int = Field(default=7, ge=1, le=31)
+    scan_max_tasks_per_run: int | None = Field(default=None, ge=1, le=10000)
     scan_request_interval_seconds: float = Field(default=1.0, ge=0, le=60)
+    scan_failure_rate_threshold: float = Field(
+        default=0.10, ge=0, le=1, alias="SCAN_FAILURE_RATE_THRESHOLD"
+    )
+    scan_failure_archive_threshold: int = Field(
+        default=3, ge=1, le=100, alias="SCAN_FAILURE_ARCHIVE_THRESHOLD"
+    )
+    scan_timeout_retries: int = Field(default=1, ge=0, le=5, alias="SCAN_TIMEOUT_RETRIES")
     realme_ota_timeout_seconds: float = Field(default=30, gt=0, le=120)
     rui_candidates: str = "8,7,6"
     enable_raw_response: bool = False
@@ -35,7 +41,9 @@ class Settings(BaseSettings):
     public_site_enabled: bool = False
     turnstile_site_key: str | None = Field(default=None, alias="TURNSTILE_SITE_KEY")
     turnstile_secret_key: str | None = Field(default=None, alias="TURNSTILE_SECRET_KEY")
-    turnstile_expected_hostname: str | None = Field(default=None, alias="TURNSTILE_EXPECTED_HOSTNAME")
+    turnstile_expected_hostname: str | None = Field(
+        default=None, alias="TURNSTILE_EXPECTED_HOSTNAME"
+    )
     public_rate_limit_salt: str | None = Field(default=None, alias="PUBLIC_RATE_LIMIT_SALT")
     ota_public_cache_ttl_seconds: int = Field(default=1800, ge=0, le=86400)
     ota_public_rate_limit_per_hour: int = Field(default=5, ge=1, le=1000)
@@ -44,19 +52,33 @@ class Settings(BaseSettings):
     enable_resolver: bool = False
     resolver_live_proof_confirmed: bool = False
     resolver_allowed_host_suffixes: str = (
-        "allawnofs.com,allawnos.com,allawntech.com,allawnfs.com,coloros.com,realmemobile.com,h2os.com"
+        "allawnofs.com,allawnos.com,allawntech.com,allawnfs.com,"
+        "coloros.com,realmemobile.com,h2os.com"
     )
     resolver_timeout_seconds: float = Field(default=30, gt=0, le=120)
     resolver_max_redirects: int = Field(default=5, ge=0, le=10)
 
     telegram_bot_token: str | None = Field(default=None, alias="TELEGRAM_BOT_TOKEN")
     telegram_chat_id: int | None = Field(default=None, alias="TELEGRAM_CHAT_ID")
+    telegram_command_chat_id: int | None = Field(default=None, alias="TELEGRAM_COMMAND_CHAT_ID")
+    telegram_worker_log_chat_id: int | None = Field(
+        default=None, alias="TELEGRAM_WORKER_LOG_CHAT_ID"
+    )
     telegram_admin_user_ids: str = ""
     telegram_poll_timeout_seconds: int = Field(default=20, ge=1, le=50)
     telegram_notification_max_attempts: int = Field(default=3, ge=1, le=20)
     telegram_notification_retry_seconds: int = Field(default=300, ge=1, le=86400)
+    telegram_worker_logs_enabled: bool = Field(default=False, alias="TELEGRAM_WORKER_LOGS_ENABLED")
+    telegram_worker_log_release_limit: int = Field(
+        default=10, ge=0, le=50, alias="TELEGRAM_WORKER_LOG_RELEASE_LIMIT"
+    )
 
-    @field_validator("telegram_chat_id", mode="before")
+    @field_validator(
+        "telegram_chat_id",
+        "telegram_command_chat_id",
+        "telegram_worker_log_chat_id",
+        mode="before",
+    )
     @classmethod
     def _blank_optional_int(cls, value: object) -> object:
         if isinstance(value, str) and not value.strip():
@@ -74,7 +96,9 @@ class Settings(BaseSettings):
     @property
     def parsed_rui_candidates(self) -> list[int]:
         try:
-            candidates = [int(item.strip()) for item in self.rui_candidates.split(",") if item.strip()]
+            candidates = [
+                int(item.strip()) for item in self.rui_candidates.split(",") if item.strip()
+            ]
         except ValueError as exc:
             raise ValueError("RUI_CANDIDATES must contain comma-separated integers") from exc
         if not candidates or any(candidate < 1 or candidate > 9 for candidate in candidates):
@@ -103,6 +127,14 @@ class Settings(BaseSettings):
         except ValueError as exc:
             raise ValueError("TELEGRAM_ADMIN_USER_IDS must contain integer IDs") from exc
 
+    @property
+    def effective_telegram_command_chat_id(self) -> int | None:
+        return self.telegram_command_chat_id or self.telegram_chat_id
+
+    @property
+    def effective_telegram_worker_log_chat_id(self) -> int | None:
+        return self.telegram_worker_log_chat_id or self.effective_telegram_command_chat_id
+
     def validate_runtime_configuration(self) -> None:
         if self.repository_backend == "supabase":
             required = {
@@ -112,13 +144,10 @@ class Settings(BaseSettings):
             missing = [name for name, value in required.items() if not value]
             if missing:
                 raise RuntimeError(
-                    "Supabase runtime requires server configuration: "
-                    + ", ".join(missing)
+                    "Supabase runtime requires server configuration: " + ", ".join(missing)
                 )
         if self.ota_provider == "realme" and not self.allow_live_ota:
-            raise RuntimeError(
-                "OTA_PROVIDER=realme requires ALLOW_LIVE_OTA=true."
-            )
+            raise RuntimeError("OTA_PROVIDER=realme requires ALLOW_LIVE_OTA=true.")
         if self.is_production:
             invalid = []
             if self.repository_backend != "supabase":
@@ -132,9 +161,7 @@ class Settings(BaseSettings):
             if not self.supabase_server_key:
                 invalid.append("SUPABASE_SECRET_KEY")
             if invalid:
-                raise RuntimeError(
-                    "Production runtime requires: " + ", ".join(invalid)
-                )
+                raise RuntimeError("Production runtime requires: " + ", ".join(invalid))
         if self.public_site_enabled:
             required = {
                 "TURNSTILE_SITE_KEY": self.turnstile_site_key,
@@ -149,7 +176,8 @@ class Settings(BaseSettings):
                 )
         if self.enable_resolver and not self.resolver_live_proof_confirmed:
             raise RuntimeError(
-                "ENABLE_RESOLVER requires RESOLVER_LIVE_PROOF_CONFIRMED=true after bounded validation."
+                "ENABLE_RESOLVER requires RESOLVER_LIVE_PROOF_CONFIRMED=true"
+                " after bounded validation."
             )
 
 

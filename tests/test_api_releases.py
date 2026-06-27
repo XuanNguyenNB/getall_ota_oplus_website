@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
@@ -126,7 +126,7 @@ def test_release_upsert_refreshes_existing_technical_display_metadata():
             version_type_id="non_display",
             about_update_url="https://example.test/component-ota/26/05/07/update.html",
             download_url="https://example.test/update.zip",
-            published_at=datetime(2026, 5, 7, tzinfo=timezone.utc),
+            published_at=datetime(2026, 5, 7, tzinfo=UTC),
         ),
         discovered_by="manual",
     )
@@ -134,4 +134,4 @@ def test_release_upsert_refreshes_existing_technical_display_metadata():
     assert refreshed.is_new is False
     assert refreshed.release.id == technical.release.id
     assert refreshed.release.real_version_name == "PKJ110_16.0.5.702(CN01)"
-    assert refreshed.release.published_at == datetime(2026, 5, 7, tzinfo=timezone.utc)
+    assert refreshed.release.published_at == datetime(2026, 5, 7, tzinfo=UTC)

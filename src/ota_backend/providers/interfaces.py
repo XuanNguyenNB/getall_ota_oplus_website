@@ -22,5 +22,4 @@ class OtaProviderDecryptError(Exception):
 
 
 class OtaProvider(Protocol):
-    def query(self, request: OtaQuery) -> OtaProviderRelease:
-        ...
+    def query(self, request: OtaQuery) -> OtaProviderRelease: ...

@@ -38,6 +38,14 @@ Supabase is the managed system of record. Application responsibilities are
 `web`, one-shot `worker`, and optional `bot`; `cloudflared` is deployment
 ingress.
 
+The `web` and `worker` processes share their wiring through
+`ota_backend.dependencies.build_dependencies(settings)`. That factory
+constructs the same repositories, OTA provider, challenge verifier, admin
+authorizer and resolver service for both callers based on `Settings`, so the
+two entry points can never drift on which adapter they use. `create_app`
+keeps its per-dependency override surface for tests; `worker.run_once`
+consumes the factory directly without instantiating a FastAPI application.
+
 ## Product Domains
 
 Implementation stories should preserve these domain boundaries:
@@ -46,10 +54,10 @@ Implementation stories should preserve these domain boundaries:
   classification, manifest inference, and manual overrides.
 - OTA query: manifest mapping, OTA track selection, `rui_candidates`,
   request/response parsing, release persistence, and deduplication.
-- Scanner: 7-day sharding, task claiming, retry policy, track progression, and
-  scan observability.
+- Scanner: configurable sharding over the Telegram-managed scan allowlist,
+  task claiming, retry policy, track progression, and scan observability.
 - Telegram: brand topic routing, notification delivery, `/latest`, restricted
-  `/status`, retry and audit state.
+  `/status`, scan allowlist management, retry and audit state.
 - Resolver: allowlisted URL resolution with SSRF protection and request
   history.
 - Security and operations: public Turnstile/quota policy, admin authentication,
